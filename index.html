@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ED Case Capture</title>
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#172127" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ED Capture">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: phone-first single column. Sticky case header + scrolling section tabs; one card per entry. */
+  --bg:#edf1f3; --surface:#ffffff; --ink:#14202a; --muted:#596a77; --line:#d3dbe1;
+  --accent:#0a6873; --accent-soft:#dcedef; --accent-ink:#ffffff;
+  --hi:#b42318; --hi-soft:#fde9e7; --lo:#1d4fa8; --lo-soft:#e4ebfa; --ok:#1d7349; --ok-soft:#e1f2e8;
+  --display:"Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --body:"Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1418; --surface:#172127; --ink:#e4ecf0; --muted:#93a5b1; --line:#2a3841;
+    --accent:#45b4c0; --accent-soft:#163238; --accent-ink:#06191c;
+    --hi:#ff8a7a; --hi-soft:#3a1d1a; --lo:#8cb2ff; --lo-soft:#1a2640; --ok:#6fd19c; --ok-soft:#14301f;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1418; --surface:#172127; --ink:#e4ecf0; --muted:#93a5b1; --line:#2a3841;
+  --accent:#45b4c0; --accent-soft:#163238; --accent-ink:#06191c;
+  --hi:#ff8a7a; --hi-soft:#3a1d1a; --lo:#8cb2ff; --lo-soft:#1a2640; --ok:#6fd19c; --ok-soft:#14301f;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0}
+h2{font-size:1.05rem}
+h3{font-size:.95rem}
+
+.top{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line);
+  padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;display:flex;align-items:center;gap:10px}
+.top .ttl{flex:1;min-width:0;display:flex;flex-direction:column}
+.top .ttl b{font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .ttl small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand{font-family:var(--display);font-weight:700;font-size:1.15rem;flex:1}
+.saved{font-size:.75rem;color:var(--muted);font-family:var(--mono)}
+.icon{border:0;background:var(--accent-soft);color:var(--accent);width:38px;height:38px;border-radius:50%;font-size:1.4rem;line-height:1;flex:none}
+
+.tabs{position:sticky;top:var(--hdr,58px);z-index:19;background:var(--surface);border-bottom:1px solid var(--line);
+  display:flex;gap:4px;overflow-x:auto;padding:6px 10px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:none;border:0;background:transparent;padding:7px 11px;border-radius:999px;color:var(--muted);font-weight:700;font-size:.9rem;white-space:nowrap}
+.tabs button[aria-current="true"]{background:var(--accent);color:var(--accent-ink)}
+.tabs .n{font-family:var(--mono);font-size:.75rem;opacity:.8;margin-left:3px}
+.tabs .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hi);margin-left:4px;vertical-align:middle}
+
+main{padding:14px 16px calc(env(safe-area-inset-bottom) + 90px);max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:12px}
+.card-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card-h h2,.card-h h3{flex:1}
+.hint{color:var(--muted);font-size:.85rem;margin:0}
+
+.fld{display:flex;flex-direction:column;gap:4px;min-width:0}
+.fld>span{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.fld>span em{font-style:normal;text-transform:none;letter-spacing:0;font-weight:400;font-family:var(--mono);font-size:.72rem}
+input,select,textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:44px;line-height:1.4}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+input.H{border-color:var(--hi);background:var(--hi-soft);color:var(--hi);font-weight:600}
+input.L{border-color:var(--lo);background:var(--lo-soft);color:var(--lo);font-weight:600}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:420px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+
+.btn{border:1px solid var(--line);background:var(--surface);padding:8px 12px;border-radius:8px;font-weight:700;font-size:.9rem;display:inline-flex;align-items:center;gap:6px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.soft{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+.btn.danger{color:var(--hi);border-color:var(--hi)}
+.btn.big{width:100%;justify-content:center;padding:14px;font-size:1rem}
+.btn.sm{padding:5px 9px;font-size:.8rem}
+.x{border:0;background:transparent;color:var(--muted);font-size:1.25rem;line-height:1;padding:4px 8px;border-radius:6px}
+.x:hover{color:var(--hi)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:4px 4px 4px 11px;font-size:.9rem;font-weight:700}
+.chip .x{font-size:1rem;padding:0 6px;color:inherit}
+.pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:.75rem;font-weight:700;background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.pill.c1,.pill.c2{background:var(--hi-soft);color:var(--hi);border-color:transparent}
+.pill.c3{background:#fff3d6;color:#8a5a00;border-color:transparent}
+.pill.flag{background:var(--hi-soft);color:var(--hi);border-color:transparent}
+.pill.mod{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+
+.adders{display:flex;flex-wrap:wrap;gap:6px}
+
+.ros-sys{display:flex;flex-direction:column;gap:6px}
+.ros-sys h3{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.ros{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:.88rem;display:inline-flex;gap:6px;align-items:center}
+.ros b{font-family:var(--mono);width:1ch;text-align:center}
+.ros.pos{background:var(--hi-soft);border-color:var(--hi);color:var(--hi);font-weight:700}
+.ros.neg{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+
+.exam-row{display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px solid var(--line)}
+.exam-row:first-child{border-top:0;padding-top:0}
+.exam-row .row b{flex:1;font-size:.9rem}
+
+.vsum{display:flex;flex-wrap:wrap;gap:6px}
+.vsum span{font-family:var(--mono);font-size:.85rem;padding:3px 8px;border-radius:6px;background:var(--bg)}
+.vsum span.H{background:var(--hi-soft);color:var(--hi);font-weight:600}
+.vsum span.L{background:var(--lo-soft);color:var(--lo);font-weight:600}
+
+.derived{font-family:var(--mono);font-size:.85rem;color:var(--muted)}
+.derived .H{color:var(--hi);font-weight:600}
+
+.photos{display:flex;flex-direction:column;gap:8px}
+.photos .lbl{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.ph-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;align-items:stretch}
+.thumb{flex:none;width:84px;border:1px solid var(--line);border-radius:8px;padding:0;background:var(--bg);overflow:hidden;display:flex;flex-direction:column}
+.thumb img{width:84px;height:84px;object-fit:cover;display:block}
+.thumb span{font-size:.7rem;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.addph{flex:none;width:84px;min-height:84px;border:1.5px dashed var(--line);border-radius:8px;background:transparent;color:var(--accent);font-size:.75rem;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:4px}
+.addph svg{width:22px;height:22px}
+
+.case-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:6px;text-align:left;width:100%}
+.case-card .row b{font-size:1.05rem;flex:1}
+.case-card .cc{color:var(--muted)}
+.notice{font-size:.85rem;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:10px 12px}
+.notice.warn{border-left-color:var(--hi)}
+.notice.amber{border-left-color:#c98a00}
+.notice .row{margin-top:8px}
+.filebtn{position:relative;overflow:hidden}
+.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+.out{font-family:var(--mono);font-size:.88rem;line-height:1.5;min-height:60vh}
+.seg{display:flex;background:var(--bg);border-radius:999px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:transparent;border-radius:999px;padding:8px;font-weight:700;color:var(--muted)}
+.seg button[aria-current="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+.modal{position:fixed;inset:0;z-index:50;background:rgba(5,12,16,.55);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:640px;max-height:92%;overflow:auto;border-radius:16px 16px 0 0;padding:16px 16px calc(env(safe-area-inset-bottom) + 16px);display:flex;flex-direction:column;gap:12px}
+@media (min-width:700px){.modal{align-items:center}.sheet{border-radius:16px}}
+.sheet img{max-width:100%;border-radius:8px;display:block}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:700;font-size:.9rem;z-index:60;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+details summary{cursor:pointer;color:var(--accent);font-weight:700;font-size:.9rem}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
+<input type="file" id="fileLib" accept="image/*" multiple hidden>
+<div id="toast" class="toast" role="status"></div>
+
+<script>
+/* ---------- reference data ---------- */
+const PANELS = {
+  cbc:{name:'CBC', items:[['wbc','WBC','×10⁹/L',4.0,11.0],['hgb','Hgb','g/L',120,170],['plt','Plt','×10⁹/L',150,400],['neut','Neut','×10⁹/L',2.0,7.5],['lymph','Lymph','×10⁹/L',1.0,4.0]]},
+  lytes:{name:'Electrolytes', items:[['na','Na','mmol/L',135,145],['k','K','mmol/L',3.5,5.0],['cl','Cl','mmol/L',98,107],['hco3','HCO₃','mmol/L',22,29]], ag:true},
+  renal:{name:'Renal / glucose', items:[['urea','Urea','mmol/L',2.5,8.0],['cr','Creatinine','µmol/L',50,110],['glu','Glucose','mmol/L',4.0,11.0]]},
+  ext:{name:'Ca / Mg / PO₄', items:[['ca','Ca (total)','mmol/L',2.10,2.60],['mg','Mg','mmol/L',0.70,1.05],['po4','PO₄','mmol/L',0.80,1.50]]},
+  gas:{name:'Blood gas', items:[['ph','pH','',7.32,7.42],['pco2','pCO₂','mmHg',38,52],['bhco3','HCO₃','mmol/L',22,29],['lac','Lactate','mmol/L',null,2.0]], gastype:true},
+  cardiac:{name:'Cardiac', items:[['trop1','hs-Trop #1','ng/L',null,null],['trop2','hs-Trop #2','ng/L',null,null],['bnp','NT-proBNP','ng/L',null,null],['ck','CK','U/L',null,200]], delta:true},
+  liver:{name:'Liver / pancreas', items:[['alt','ALT','U/L',null,40],['ast','AST','U/L',null,40],['alp','ALP','U/L',40,120],['bili','T. bili','µmol/L',null,20],['alb','Albumin','g/L',35,50],['lip','Lipase','U/L',null,null]]},
+  coag:{name:'Coags', items:[['inr','INR','',null,1.2],['ptt','aPTT','s',25,38],['fib','Fibrinogen','g/L',2.0,4.0],['ddim','D-dimer','',null,null]]},
+  misc:{name:'Other', items:[['crp','CRP','mg/L',null,10],['bhcg','β-hCG','IU/L',null,null],['tsh','TSH','mU/L',0.4,4.5],['etoh','Ethanol','mmol/L',null,null],['apap','Acetaminophen','µmol/L',null,null],['asa','Salicylate','mmol/L',null,null]]},
+  ua:{name:'Urinalysis', text:true},
+  custom:{name:'Other tests', custom:true}
+};
+const VITALS = [['hr','HR','bpm',50,100],['sbp','SBP','mmHg',90,160],['dbp','DBP','mmHg',null,100],['rr','RR','/min',12,20],['temp','Temp','°C',36.0,38.0],['spo2','SpO₂','%',92,null],['gcs','GCS','',15,null],['gluc','CBG','mmol/L',4.0,11.0],['pain','Pain','/10',null,null]];
+const ROS = [
+  ['Constitutional',['fever','chills','night sweats','weight loss','fatigue']],
+  ['Cardiovascular',['chest pain','palpitations','syncope','orthopnea','PND','leg swelling']],
+  ['Respiratory',['shortness of breath','cough','hemoptysis','wheeze']],
+  ['GI',['nausea','vomiting','abdominal pain','diarrhea','constipation','melena / hematochezia']],
+  ['GU / Gyn',['dysuria','frequency','hematuria','flank pain','vaginal bleeding','discharge']],
+  ['Neuro',['headache','focal weakness','numbness','vision change','speech change','dizziness','seizure']],
+  ['MSK / Skin',['back pain','joint pain','trauma','rash','wound']],
+  ['Psych',['low mood','suicidal ideation','hallucinations']]
+];
+const HPI = [['onset','Onset'],['loc','Location'],['dur','Duration'],['char','Character'],['rad','Radiation'],['sev','Severity (0–10)'],['timing','Timing / course'],['agg','Aggravating'],['rel','Relieving / tried'],['assoc','Associated symptoms'],['context','Context / risk factors'],['prior','Prior episodes / workup']];
+const EXAM = [
+  ['general','General','Alert, well-appearing, in no acute distress.'],
+  ['heent','HEENT','Atraumatic. PERRL, EOMI. Mucous membranes moist. Oropharynx clear.'],
+  ['neck','Neck','Supple. No JVD. Trachea midline. No lymphadenopathy.'],
+  ['cvs','Cardiovascular','Normal S1/S2, regular rhythm, no murmurs. Peripheral pulses 2+ and symmetric. Cap refill <2 s.'],
+  ['resp','Respiratory','Normal work of breathing. Clear to auscultation bilaterally. No wheeze or crackles.'],
+  ['abdo','Abdomen','Soft, non-distended, non-tender. No guarding or rebound. No CVA tenderness.'],
+  ['msk','MSK / Extremities','No edema. No calf tenderness. Full range of motion.'],
+  ['neuro','Neuro','GCS 15. Oriented ×3. CN II–XII grossly intact. Strength 5/5 and sensation intact in all limbs. Normal gait.'],
+  ['skin','Skin','Warm and dry. No rash.'],
+  ['psych','Mental status','Calm and cooperative. Normal affect. Linear thought process.'],
+  ['other','Other','']
+];
+const MODS = ['ECG','X-ray','CT','US','POCUS','MRI','Other'];
+const DDX_T = {likely:'Most likely', consider:'Also considering', cantmiss:"Can't miss"};
+const DISPO = ['','Discharge home','Admit','Observation','Consult pending','Transfer','Left without being seen / AMA'];
+const TABS = [['chart','Chart'],['vitals','Vitals'],['labs','Labs'],['imaging','Imaging'],['history','History'],['exam','Exam'],['ap','A/P'],['output','Output']];
+const SEXW = {M:'man', F:'woman', X:'patient'};
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const nowT = () => new Date().toTimeString().slice(0,5);
+const getPath = (o,p) => p.split('.').reduce((x,k) => x == null ? undefined : x[k], o);
+function setPath(o,p,v){const ks=p.split('.');let x=o;for(let i=0;i<ks.length-1;i++){const k=ks[i];if(x[k]==null)x[k]=/^\d+$/.test(ks[i+1])?[]:{};x=x[k];}x[ks[ks.length-1]]=v;}
+const idf = f => 'f_' + f.replace(/\./g,'_');
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+const tr = s => (s || '').trim();
+function joinAnd(a){a=a.filter(Boolean);if(a.length<2)return a.join('');return a.slice(0,-1).join(', ')+' and '+a[a.length-1];}
+function flagOf(v,lo,hi){if(v===''||v==null)return '';const n=parseFloat(String(v).replace(/[<>]/g,''));if(isNaN(n))return '';if(lo!=null&&n<lo)return 'L';if(hi!=null&&n>hi)return 'H';return '';}
+function rangeTxt(lo,hi){if(lo!=null&&hi!=null)return `${lo}–${hi}`;if(hi!=null)return `<${hi}`;if(lo!=null)return `≥${lo}`;return 'assay-specific';}
+const CAM_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const LIB_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>';
+
+/* ---------- storage (IndexedDB on this device, memory fallback) ---------- */
+let idb = null, memMode = false;
+const mem = {cases:new Map(), photos:new Map(), meta:new Map()};
+function openDB(){
+  return new Promise(res => {
+    const timer = setTimeout(() => { memMode = true; res(false); }, 2500);
+    try{
+      const r = indexedDB.open('ed-case-capture', 1);
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        d.createObjectStore('cases', {keyPath:'id'});
+        d.createObjectStore('photos', {keyPath:'id'}).createIndex('caseId','caseId');
+        d.createObjectStore('meta', {keyPath:'k'});
+      };
+      r.onsuccess = () => { clearTimeout(timer); idb = r.result; res(true); };
+      r.onerror = () => { clearTimeout(timer); memMode = true; res(false); };
+    }catch(e){ clearTimeout(timer); memMode = true; res(false); }
+  });
+}
+function req(store, mode, fn){
+  return new Promise((res, rej) => {
+    try{
+      const t = idb.transaction(store, mode); const r = fn(t.objectStore(store));
+      t.oncomplete = () => res(r ? r.result : undefined); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    }catch(e){ rej(e); }
+  });
+}
+const keyOf = (store,o) => store === 'meta' ? o.k : o.id;
+async function dbAll(store){ if(memMode) return [...mem[store].values()]; try{ return await req(store,'readonly',s=>s.getAll()); }catch(e){ return []; } }
+async function dbPut(store,o){ if(memMode){ mem[store].set(keyOf(store,o), JSON.parse(JSON.stringify(o))); return; } try{ await req(store,'readwrite',s=>s.put(o)); }catch(e){ toast('Could not save — storage may be full'); } }
+async function dbDel(store,k){ if(memMode){ mem[store].delete(k); return; } try{ await req(store,'readwrite',s=>s.delete(k)); }catch(e){} }
+async function photosOf(caseId){ if(memMode) return [...mem.photos.values()].filter(p=>p.caseId===caseId); try{ return await req('photos','readonly',s=>s.index('caseId').getAll(caseId)); }catch(e){ return []; } }
+
+/* ---------- state ---------- */
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+let updateReady = false;
+let cases = [], cur = null, photos = [], tab = 'chart', outSub = 'oral', pendingRef = null, saveTimer = null;
+
+function blankCase(){
+  return {id:uid(), created:Date.now(), updated:Date.now(), label:'', age:'', sex:'', arrival:nowT(), ctas:'', cc:'', triage:'',
+    pmh:[], psh:'', meds:[], allergies:'', social:'', family:'', records:'', vitals:[], labs:[], imaging:[], notes:'',
+    hpi:{}, ros:{}, exam:{}, ap:{summary:'', ddx:[], workup:'', tx:'', consults:'', course:[], dispo:'', dispoDetail:'', followup:''},
+    out:{oral:'', note:''}};
+}
+function save(){
+  if(!cur) return;
+  cur.updated = Date.now();
+  const s = $('#saved'); if(s) s.textContent = 'Saving…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => { await dbPut('cases', cur); const s2 = $('#saved'); if(s2) s2.textContent = memMode ? 'Not stored' : 'Saved'; }, 350);
+}
+async function flush(){ if(cur && saveTimer){ clearTimeout(saveTimer); saveTimer = null; await dbPut('cases', cur); } }
+
+/* ---------- small UI helpers ---------- */
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),1800); }
+function modal(html){ closeModal(); const m=document.createElement('div'); m.className='modal'; m.id='modal'; m.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">${html}</div>`; m.addEventListener('click',e=>{ if(e.target===m) closeModal(); }); document.body.appendChild(m); return m; }
+function closeModal(){ const m=$('#modal'); if(m) m.remove(); }
+function ask(msg, okLabel='Delete'){
+  return new Promise(res => {
+    const m = modal(`<h2>${esc(msg)}</h2><div class="row"><button class="btn grow" id="askNo">Cancel</button><button class="btn danger grow" id="askYes">${esc(okLabel)}</button></div>`);
+    m.querySelector('#askNo').onclick = () => { closeModal(); res(false); };
+    m.querySelector('#askYes').onclick = () => { closeModal(); res(true); };
+  });
+}
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); toast('Copied'); return; }catch(e){}
+  const t=document.createElement('textarea'); t.value=text; t.style.position='fixed'; t.style.opacity='0'; document.body.appendChild(t); t.select();
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+  t.remove(); toast(ok ? 'Copied' : 'Copy blocked — select the text and copy manually');
+}
+function autosize(el){ el.style.height='auto'; el.style.height=(el.scrollHeight+2)+'px'; }
+
+const inp = (f, ph='', extra='') => `<input id="${idf(f)}" data-f="${f}" type="text" value="${esc(getPath(cur,f) ?? '')}" placeholder="${esc(ph)}" ${extra}>`;
+const ta = (f, ph='', rows=2) => `<textarea id="${idf(f)}" data-f="${f}" rows="${rows}" placeholder="${esc(ph)}">${esc(getPath(cur,f) ?? '')}</textarea>`;
+const fld = (label, html) => `<label class="fld"><span>${label}</span>${html}</label>`;
+function sel(f, opts){ const v = getPath(cur,f) ?? ''; return `<select id="${idf(f)}" data-f="${f}">${opts.map(o => { const [val,lab] = Array.isArray(o) ? o : [o, o || '—']; return `<option value="${esc(val)}"${val===v?' selected':''}>${esc(lab)}</option>`; }).join('')}</select>`; }
+function numIn(f, lo, hi, ph=''){ const v = getPath(cur,f) ?? ''; const fl = flagOf(v,lo,hi);
+  return `<input id="${idf(f)}" data-f="${f}" class="num ${fl}" type="text" inputmode="decimal" value="${esc(v)}" placeholder="${esc(ph)}"${lo!=null?` data-lo="${lo}"`:''}${hi!=null?` data-hi="${hi}"`:''}>`; }
+function timeIn(f){ return `<input id="${idf(f)}" data-f="${f}" class="num" type="time" value="${esc(getPath(cur,f) ?? '')}" style="width:auto">`; }
+
+function photoStrip(ref, label='Photos'){
+  const ps = photos.filter(p => p.ref === ref);
+  return `<div class="photos"><div class="lbl">${label}${ps.length?` · ${ps.length}`:''}</div><div class="ph-row">
+    ${ps.map(p => `<button class="thumb" data-act="ph-view" data-id="${p.id}"><img src="${p.data}" alt="${esc(p.caption || 'Attached photo')}"><span>${esc(p.caption || 'Add caption')}</span></button>`).join('')}
+    <button class="addph" data-act="cam" data-ref="${ref}">${CAM_SVG}Camera</button>
+    <button class="addph" data-act="lib" data-ref="${ref}">${LIB_SVG}Library</button>
+  </div></div>`;
+}
+
+/* ---------- flags ---------- */
+function labFlags(c){
+  const out = [];
+  c.labs.forEach(e => { const P = PANELS[e.panel]; if(!P || !P.items) { if(P && P.custom) (e.rows||[]).forEach(r => { if(r.f) out.push(r.name); }); return; }
+    P.items.forEach(([k,l,u,lo,hi]) => { if(flagOf(e.v?.[k],lo,hi)) out.push(l); }); });
+  return out;
+}
+function vitFlags(v){ return VITALS.filter(([k,,,lo,hi]) => flagOf(v[k],lo,hi)).length; }
+
+/* ---------- views ---------- */
+function render(){
+  const app = $('#app');
+  const y = window.scrollY;
+  app.innerHTML = cur ? caseView() : listView();
+  document.querySelectorAll('textarea').forEach(autosize);
+  const h = document.querySelector('.top'); if(h) document.documentElement.style.setProperty('--hdr', h.offsetHeight + 'px');
+  return y;
+}
+function rerender(){ const y = window.scrollY; render(); window.scrollTo(0, y); }
+
+function listView(){
+  const sorted = [...cases].sort((a,b) => b.updated - a.updated);
+  return `<header class="top"><div class="brand">ED Case Capture</div><button class="btn soft sm" data-act="settings">Backup &amp; data</button></header>
+  <main>
+    ${memMode ? `<div class="notice warn">Storage is unavailable in this browser, so cases will be lost when you close the page. Save a backup file now from “Backup &amp; data”.</div>` : ''}
+    ${updateReady ? `<div class="notice">A new version of ED Capture is ready.<div class="row"><button class="btn primary sm" data-act="reload">Reload</button></div></div>` : ''}
+    ${!isStandalone() && !lsGet('edcap.hideInstall') ? `<div class="notice">To install: open this page in Safari, tap Share, then Add to Home Screen. Always open the app from that icon, because it keeps its own storage separate from Safari.<div class="row"><button class="btn sm" data-act="hide-install">Got it</button></div></div>` : ''}
+    ${bkDue() ? `<div class="notice amber">${lsGet('edcap.lastBackup') ? 'Your last backup file is more than 20 hours old.' : 'No backup file saved yet.'}<div class="row"><button class="btn primary sm" data-act="bk-file">Save backup file</button></div></div>` : ''}
+    <button class="btn primary big" data-act="new">+ New patient</button>
+    <div class="notice">Use a bed number or initials only. Leave out names, health card numbers, MRNs and dates of birth, and keep identifiers out of photos.</div>
+    ${sorted.length ? sorted.map(c => {
+      const lf = labFlags(c).length, vf = c.vitals.reduce((n,v) => n + vitFlags(v), 0);
+      const sub = [c.age && `${c.age}${c.sex||''}`, c.arrival && `arr ${c.arrival}`].filter(Boolean).join(' · ');
+      return `<button class="case-card" data-act="open" data-id="${c.id}">
+        <div class="row"><b>${esc(c.label || 'Untitled patient')}</b>${c.ctas?`<span class="pill c${c.ctas}">CTAS ${c.ctas}</span>`:''}</div>
+        <div class="cc">${esc(c.cc || 'No presenting complaint yet')}</div>
+        <div class="row"><span class="pill">${esc(sub || new Date(c.created).toLocaleDateString())}</span>
+          ${lf ? `<span class="pill flag">${lf} abnormal lab${lf>1?'s':''}</span>` : ''}${vf ? `<span class="pill flag">${vf} abnormal vital${vf>1?'s':''}</span>` : ''}
+          ${c.ap.dispo ? `<span class="pill">${esc(c.ap.dispo)}</span>` : ''}</div>
+      </button>`; }).join('') : `<p class="hint">No patients yet.</p>`}
+  </main>`;
+}
+
+function hdrText(){ return {
+  t: cur.label || 'Untitled patient',
+  s: [cur.age && `${cur.age}${cur.sex||''}`, cur.cc, cur.ctas && `CTAS ${cur.ctas}`].filter(Boolean).join(' · ') || 'Add age, sex and complaint in Chart'
+}; }
+
+function caseView(){
+  const h = hdrText(); const lf = labFlags(cur).length;
+  const counts = {vitals:cur.vitals.length, labs:cur.labs.length, imaging:cur.imaging.length};
+  return `<header class="top"><button class="icon" data-act="back" aria-label="All patients">‹</button>
+    <div class="ttl"><b id="hdrT">${esc(h.t)}</b><small id="hdrS">${esc(h.s)}</small></div><span id="saved" class="saved">${memMode?'Not stored':'Saved'}</span></header>
+  <nav class="tabs" aria-label="Sections">${TABS.map(([k,l]) => `<button data-act="tab" data-t="${k}" aria-current="${tab===k}">${l}${counts[k]?`<span class="n">${counts[k]}</span>`:''}${k==='labs'&&lf?'<span class="dot" aria-label="abnormal results"></span>':''}</button>`).join('')}</nav>
+  <main>${VIEWS[tab]()}</main>`;
+}
+
+const VIEWS = {
+chart(){
+  return `<section class="card"><div class="card-h"><h2>Patient</h2></div>
+    <div class="g2">${fld('Bed / initials', inp('label','e.g. Bed 14'))}${fld('Arrival', timeIn('arrival'))}</div>
+    <div class="g3">${fld('Age', inp('age','yrs','inputmode="numeric" class="num"'))}${fld('Sex', sel('sex',[['','—'],['M','Male'],['F','Female'],['X','Other']]))}${fld('CTAS', sel('ctas',[['','—'],['1','1'],['2','2'],['3','3'],['4','4'],['5','5']]))}</div>
+    ${fld('Presenting complaint', inp('cc','e.g. chest pain × 2 h'))}
+    ${fld('Triage note', ta('triage','Triage nurse assessment, initial complaint, EMS report'))}
+  </section>
+  <section class="card"><div class="card-h"><h2>Past medical history</h2></div>
+    <div class="chips">${cur.pmh.map((p,i) => `<span class="chip">${esc(p)}<button class="x" data-act="rm" data-p="pmh.${i}" aria-label="Remove ${esc(p)}">×</button></span>`).join('') || '<span class="hint">None added</span>'}</div>
+    <div class="row"><input id="pmhIn" class="grow" placeholder="Add condition (comma-separate several)"><button class="btn soft" data-act="pmh-add">Add</button></div>
+    ${fld('Past surgical history', ta('psh','Procedures, year'))}
+  </section>
+  <section class="card"><div class="card-h"><h2>Home medications</h2><button class="btn soft sm" data-act="add-med">+ Medication</button></div>
+    ${cur.meds.map((m,i) => `<div class="row"><div class="grow g3">${inp(`meds.${i}.name`,'Drug')}${inp(`meds.${i}.dose`,'Dose')}${inp(`meds.${i}.freq`,'Freq')}</div><button class="x" data-act="rm" data-p="meds.${i}" aria-label="Remove medication">×</button></div>`).join('') || '<p class="hint">No medications added.</p>'}
+    <details><summary>Paste a med list</summary><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px"><textarea id="bulkMeds" rows="4" placeholder="One medication per line, e.g.&#10;ramipril 10 mg daily&#10;metformin 1000 mg BID"></textarea><button class="btn soft" data-act="bulk-meds">Add these lines</button></div></details>
+    ${fld('Allergies', inp('allergies','Drug – reaction, or NKDA'))}
+  </section>
+  <section class="card"><div class="card-h"><h2>Social &amp; family</h2></div>
+    ${fld('Social history', ta('social','Smoking, alcohol, drugs, living situation, baseline function, occupation'))}
+    ${fld('Family history', ta('family','Relevant family history'))}
+  </section>
+  <section class="card"><div class="card-h"><h2>Prior records</h2></div>
+    ${fld('From the chart', ta('records','Previous ED visits, discharge summaries, recent consults, baseline labs/ECG',3))}
+    ${photoStrip('sec:chart')}
+  </section>`;
+},
+vitals(){
+  const last = cur.vitals[cur.vitals.length-1];
+  const sum = last ? `<div class="vsum">${VITALS.filter(([k])=>last[k]).map(([k,l,u,lo,hi]) => `<span class="${flagOf(last[k],lo,hi)}">${l} ${esc(last[k])}${k==='spo2'?'% '+esc(last.o2||'RA'):''}</span>`).join('')}</div>` : '';
+  return `<section class="card"><div class="card-h"><h2>Vital signs</h2><button class="btn primary sm" data-act="add-vit">+ New set</button></div>
+    ${last ? `<p class="hint">Latest (${esc(last.t||'')})</p>${sum}` : '<p class="hint">Add the triage set first, then each reassessment.</p>'}
+    <p class="hint">Flags: HR 50–100, SBP 90–160, RR 12–20, T 36–38 °C, SpO₂ ≥92%, GCS 15, CBG 4–11.</p></section>
+  ${cur.vitals.map((v,i) => `<section class="card"><div class="card-h"><h3>${i===0?'Triage / first set':'Set '+(i+1)}</h3>${timeIn(`vitals.${i}.t`)}<button class="x" data-act="rm" data-p="vitals.${i}" aria-label="Delete this set">×</button></div>
+    <div class="g4">${VITALS.map(([k,l,u,lo,hi]) => fld(`${l} <em>${u}</em>`, numIn(`vitals.${i}.${k}`,lo,hi))).join('')}${fld('O₂', inp(`vitals.${i}.o2`,'RA / 2L NP'))}</div>
+  </section>`).join('')}
+  <section class="card">${photoStrip('sec:vitals','Photos (monitor, flowsheet)')}</section>`;
+},
+labs(){
+  return `<section class="card"><div class="card-h"><h2>Add results</h2></div>
+    <div class="adders">${Object.entries(PANELS).map(([k,P]) => `<button class="btn soft sm" data-act="add-lab" data-p="${k}">+ ${P.name}</button>`).join('')}</div>
+    <p class="hint">Flags use generic adult SI ranges. Troponin, NT-proBNP, lipase and D-dimer cut-offs are assay-specific, so they aren't flagged. Check your lab's reference intervals.</p></section>
+  ${cur.labs.map((e,i) => labCard(e,i)).join('')}
+  <section class="card">${photoStrip('sec:labs','Photos (lab screen, printouts)')}</section>`;
+},
+imaging(){
+  return `<section class="card"><div class="card-h"><h2>Add a study</h2></div>
+    <div class="adders">${MODS.map(m => `<button class="btn soft sm" data-act="add-img" data-m="${m}">+ ${m}</button>`).join('')}</div></section>
+  ${cur.imaging.map((s,i) => `<section class="card"><div class="card-h"><span class="pill mod">${esc(s.mod)}</span><h3>${esc(s.study || '')}</h3>${timeIn(`imaging.${i}.t`)}<button class="x" data-act="rm" data-p="imaging.${i}" aria-label="Delete study">×</button></div>
+    ${fld('Study', inp(`imaging.${i}.study`, s.mod==='ECG' ? '12-lead' : 'e.g. CXR PA/lat, CT head non-con'))}
+    ${fld(s.mod==='ECG' ? 'Findings (rate, rhythm, axis, intervals, ST/T)' : 'Findings', ta(`imaging.${i}.findings`, s.mod==='ECG' ? 'Sinus 98, normal axis, PR/QRS/QTc…' : 'Your read or report findings'))}
+    ${fld('Impression', ta(`imaging.${i}.impression`,'Bottom line'))}
+    ${fld('Compared with prior', inp(`imaging.${i}.prior`,'e.g. unchanged from 2025 ECG'))}
+    ${photoStrip('img:'+s.id)}
+  </section>`).join('')}
+  ${cur.imaging.length ? '' : '<p class="hint">No studies yet.</p>'}`;
+},
+history(){
+  return `<section class="card"><div class="card-h"><h2>Interview notes</h2><button class="btn soft sm" data-act="stamp">Insert time</button></div>
+    <p class="hint">Type freely while you talk with the patient. Sort it into the fields below afterwards.</p>
+    ${ta('notes','Scratch notes…',5)}</section>
+  <section class="card"><div class="card-h"><h2>HPI</h2></div>
+    <div class="g2">${HPI.map(([k,l]) => fld(l, inp(`hpi.${k}`))).join('')}</div>
+    <div class="card-h"><h3>HPI narrative</h3><button class="btn soft sm" data-act="hpi-draft">Draft from fields</button></div>
+    ${ta('hpi.narrative','Used as the HPI in your presentation and note. Leave blank to use the fields above.',4)}
+  </section>
+  <section class="card"><div class="card-h"><h2>Review of systems</h2></div>
+    <p class="hint">Tap once for positive (+), twice for negative (−), three times to clear.</p>
+    ${ROS.map(([sys,items]) => `<div class="ros-sys"><h3>${sys}</h3><div class="chips">${items.map(it => { const s = cur.ros[it] || ''; return `<button class="ros ${s}" data-act="ros" data-s="${esc(it)}" aria-pressed="${!!s}"><b>${s==='pos'?'+':s==='neg'?'−':'·'}</b>${esc(it)}</button>`; }).join('')}</div></div>`).join('')}
+    ${fld('Other ROS', inp('rosOther','Anything not listed'))}
+    ${photoStrip('sec:history')}
+  </section>`;
+},
+exam(){
+  const last = cur.vitals[cur.vitals.length-1];
+  return `<section class="card"><div class="card-h"><h2>Physical exam</h2></div>
+    ${last ? `<p class="hint">Vitals (${esc(last.t||'')}): ${esc(vitStr(last))}</p>` : '<p class="hint">No vitals entered yet.</p>'}
+    ${EXAM.map(([k,l,n]) => `<div class="exam-row"><div class="row"><b>${l}</b>${n?`<button class="btn soft sm" data-act="normal" data-k="${k}">Normal</button>`:''}</div>${ta(`exam.${k}`, n ? 'Findings' : 'Other findings')}</div>`).join('')}
+    ${photoStrip('sec:exam','Photos (rash, wound, injury)')}
+  </section>`;
+},
+ap(){
+  const a = cur.ap;
+  return `<section class="card"><div class="card-h"><h2>Assessment</h2></div>
+    ${fld('Summary statement', ta('ap.summary','One line: age/sex, key history, presentation, key findings'))}
+    <div class="card-h"><h3>Differential</h3><button class="btn soft sm" data-act="add-ddx">+ Diagnosis</button></div>
+    ${a.ddx.map((d,i) => `<div style="display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px solid var(--line)"><div class="row"><div class="grow">${inp(`ap.ddx.${i}.dx`,'Diagnosis')}</div><div style="width:42%">${sel(`ap.ddx.${i}.type`, Object.entries(DDX_T))}</div><button class="x" data-act="rm" data-p="ap.ddx.${i}" aria-label="Remove diagnosis">×</button></div>${ta(`ap.ddx.${i}.why`,'For / against',1)}</div>`).join('') || '<p class="hint">No diagnoses yet.</p>'}
+  </section>
+  <section class="card"><div class="card-h"><h2>Plan</h2></div>
+    ${fld('Investigations', ta('ap.workup','Labs, imaging, ECG, repeat trop at…'))}
+    ${fld('Management', ta('ap.tx','Treatments given or planned, with doses'))}
+    ${fld('Consults', inp('ap.consults','Service and question'))}
+  </section>
+  <section class="card"><div class="card-h"><h2>ED course</h2><button class="btn soft sm" data-act="add-course">+ Entry</button></div>
+    ${a.course.map((c,i) => `<div class="row">${timeIn(`ap.course.${i}.t`)}<div class="grow">${ta(`ap.course.${i}.text`,'Reassessment, response to treatment, new results',1)}</div><button class="x" data-act="rm" data-p="ap.course.${i}" aria-label="Remove entry">×</button></div>`).join('') || '<p class="hint">Log reassessments and treatment responses here.</p>'}
+  </section>
+  <section class="card"><div class="card-h"><h2>Disposition</h2></div>
+    <div class="g2">${fld('Disposition', sel('ap.dispo', DISPO))}${fld('Details', inp('ap.dispoDetail','Service, unit, condition'))}</div>
+    ${fld('Follow-up / return precautions', ta('ap.followup','Who, when, and what should bring them back'))}
+    ${photoStrip('sec:ap')}
+  </section>`;
+},
+output(){
+  if(!cur.out[outSub]) cur.out[outSub] = outSub === 'oral' ? genOral(cur) : genNote(cur);
+  const n = photos.length;
+  return `<section class="card">
+    <div class="seg" role="tablist"><button data-act="out-sub" data-s="oral" aria-current="${outSub==='oral'}">Oral presentation</button><button data-act="out-sub" data-s="note" aria-current="${outSub==='note'}">ED note</button></div>
+    <div class="row"><button class="btn primary grow" data-act="copy">Copy text</button>${navigator.share ? '<button class="btn soft" data-act="share-out">Share</button>' : ''}<button class="btn soft" data-act="regen">Regenerate</button></div>
+    <p class="hint">Your edits here are saved. Regenerate replaces this text with a fresh draft from the other tabs.${n ? ` ${n} photo${n>1?'s are':' is'} kept in the app, not in this text.` : ''}</p>
+    <textarea class="out" data-f="out.${outSub}" id="outText" aria-label="Generated text">${esc(cur.out[outSub])}</textarea>
+  </section>
+  <section class="card"><div class="card-h"><h2>This patient</h2></div>
+    <button class="btn danger" data-act="del-case">Delete this patient and its photos</button></section>`;
+}
+};
+
+function labCard(e,i){
+  const P = PANELS[e.panel];
+  let body = '';
+  if(P.text) body = ta(`labs.${i}.text`,'Dipstick / micro: leuk, nitrite, blood, protein, ketones, SG…',2);
+  else if(P.custom) body = `${(e.rows||[]).map((r,j) => `<div class="row"><div class="grow g3">${inp(`labs.${i}.rows.${j}.name`,'Test')}${inp(`labs.${i}.rows.${j}.value`,'Value','class="num" inputmode="decimal"')}${inp(`labs.${i}.rows.${j}.unit`,'Unit')}</div><div style="width:72px">${sel(`labs.${i}.rows.${j}.f`,[['','—'],['H','H'],['L','L']])}</div><button class="x" data-act="rm" data-p="labs.${i}.rows.${j}" aria-label="Remove test">×</button></div>`).join('')}
+    <button class="btn soft sm" data-act="add-row" data-i="${i}" style="align-self:flex-start">+ Test</button>`;
+  else body = `<div class="g3">${P.items.map(([k,l,u,lo,hi]) => fld(`${l} <em>${rangeTxt(lo,hi)}${u?' '+u:''}</em>`, numIn(`labs.${i}.v.${k}`,lo,hi))).join('')}</div>
+    ${P.gastype ? fld('Sample', sel(`labs.${i}.gas`,[['venous','Venous'],['arterial','Arterial'],['capillary','Capillary']])) : ''}
+    ${(P.ag || P.delta) ? `<div class="derived" id="der_${i}">${derived(e)}</div>` : ''}`;
+  return `<section class="card"><div class="card-h"><h3>${P.name}</h3>${timeIn(`labs.${i}.t`)}<button class="x" data-act="rm" data-p="labs.${i}" aria-label="Delete ${P.name}">×</button></div>${body}</section>`;
+}
+function derived(e){
+  const P = PANELS[e.panel]; const v = e.v || {};
+  if(P.ag){ const na=parseFloat(v.na), cl=parseFloat(v.cl), hc=parseFloat(v.hco3);
+    if([na,cl,hc].some(isNaN)) return 'Anion gap: enter Na, Cl and HCO₃';
+    const ag = +(na-cl-hc).toFixed(1); return `Anion gap: <span class="${ag>12?'H':''}">${ag}</span> (ref 8–12)`; }
+  if(P.delta){ const a=parseFloat(v.trop1), b=parseFloat(v.trop2);
+    if(isNaN(a)||isNaN(b)) return 'Troponin delta: enter both values';
+    return `Troponin delta: ${b-a>0?'+':''}${+(b-a).toFixed(1)} ng/L`; }
+  return '';
+}
+
+/* ---------- generators ---------- */
+function vitStr(v){ if(!v) return ''; const p=[];
+  if(v.hr)p.push(`HR ${v.hr}`); if(v.sbp||v.dbp)p.push(`BP ${v.sbp||'?'}/${v.dbp||'?'}`); if(v.rr)p.push(`RR ${v.rr}`);
+  if(v.temp)p.push(`T ${v.temp}°C`); if(v.spo2)p.push(`SpO2 ${v.spo2}% ${v.o2||'RA'}`); if(v.gcs)p.push(`GCS ${v.gcs}`);
+  if(v.gluc)p.push(`CBG ${v.gluc}`); if(v.pain)p.push(`pain ${v.pain}/10`); return p.join(', '); }
+const idLine = c => `${c.age ? c.age + '-year-old ' : ''}${SEXW[c.sex] || 'patient'}`;
+const medStr = m => [m.name,m.dose,m.freq].map(tr).filter(Boolean).join(' ');
+function rosSplit(c){ const pos=[],neg=[]; ROS.forEach(([,items]) => items.forEach(it => { if(c.ros[it]==='pos')pos.push(it); else if(c.ros[it]==='neg')neg.push(it); })); return {pos,neg}; }
+function hpiText(c){
+  if(tr(c.hpi.narrative)) return tr(c.hpi.narrative);
+  return HPI.filter(([k]) => tr(c.hpi[k])).map(([k,l]) => `${l.replace(/ \(.*\)/,'')}: ${tr(c.hpi[k])}${k==='sev'&&/^\d+$/.test(tr(c.hpi[k]))?'/10':''}`).join('. ');
+}
+function labParts(e, notableOnly){
+  const P = PANELS[e.panel]; if(!P) return [];
+  if(P.text) return tr(e.text) ? [tr(e.text)] : [];
+  if(P.custom) return (e.rows||[]).filter(r => tr(r.name) && tr(r.value) && (!notableOnly || r.f)).map(r => `${tr(r.name)} ${tr(r.value)}${tr(r.unit)?' '+tr(r.unit):''}${r.f?` (${r.f})`:''}`);
+  const v = e.v || {}, parts = [];
+  P.items.forEach(([k,l,u,lo,hi]) => { const val = tr(v[k]); if(!val) return; const f = flagOf(val,lo,hi);
+    if(notableOnly && !f && (lo!=null || hi!=null)) return; parts.push(`${l} ${val}${u?' '+u:''}${f?` (${f})`:''}`); });
+  if(P.ag){ const na=parseFloat(v.na), cl=parseFloat(v.cl), hc=parseFloat(v.hco3); if(![na,cl,hc].some(isNaN)){ const ag=+(na-cl-hc).toFixed(1); if(!notableOnly || ag>12) parts.push(`anion gap ${ag}${ag>12?' (H)':''}`); } }
+  if(P.delta){ const a=parseFloat(v.trop1), b=parseFloat(v.trop2); if(!isNaN(a)&&!isNaN(b)) parts.push(`delta ${b-a>0?'+':''}${+(b-a).toFixed(1)}`); }
+  if(P.gastype && parts.length && e.gas && e.gas!=='venous') parts.unshift(`(${e.gas})`);
+  return parts;
+}
+const labHasData = e => { const P=PANELS[e.panel]; if(P.text) return !!tr(e.text); if(P.custom) return (e.rows||[]).some(r=>tr(r.value)); return Object.values(e.v||{}).some(x=>tr(x)); };
+const labName = e => e.panel==='gas' ? `${cap(e.gas||'venous')} gas` : PANELS[e.panel].name;
+const studyLine = s => { const what = [s.mod, tr(s.study)].filter(Boolean).join(' '); const res = tr(s.impression) || tr(s.findings); return res ? `${what}: ${res}` : ''; };
+
+function genOral(c){
+  const P = [];
+  const pmh = c.pmh.length ? ` with a history of ${joinAnd(c.pmh)}` : '';
+  let open = `This is a ${idLine(c)}${pmh}, presenting with ${tr(c.cc) || '[presenting complaint]'}.`;
+  const h = hpiText(c); if(h) open += ' ' + h + (/[.!?]$/.test(h) ? '' : '.');
+  P.push(open);
+  const {pos,neg} = rosSplit(c); const r=[];
+  if(pos.length) r.push(`Pertinent positives include ${joinAnd(pos)}.`);
+  if(neg.length) r.push(`They deny ${joinAnd(neg)}.`);
+  if(tr(c.rosOther)) r.push(tr(c.rosOther) + '.');
+  if(r.length) P.push(r.join(' '));
+  const bg = [];
+  if(tr(c.psh)) bg.push(`Surgical history: ${tr(c.psh)}.`);
+  const meds = c.meds.map(medStr).filter(Boolean);
+  if(meds.length) bg.push(`Medications: ${meds.join('; ')}.`);
+  bg.push(`Allergies: ${tr(c.allergies) || 'not documented'}.`);
+  if(tr(c.social)) bg.push(`Social history: ${tr(c.social).replace(/\.$/,'')}.`);
+  if(tr(c.family)) bg.push(`Family history: ${tr(c.family).replace(/\.$/,'')}.`);
+  P.push(bg.join(' '));
+  const ex = [];
+  const vs = c.vitals.filter(v => vitStr(v));
+  if(vs.length){ let s = `On exam, vitals at ${vs[0].t||'triage'} were ${vitStr(vs[0])}`; if(vs.length>1){ const l=vs[vs.length-1]; s += `; most recently ${vitStr(l)}${l.t?` at ${l.t}`:''}`; } ex.push(s + '.'); }
+  EXAM.forEach(([k,l]) => { const t = tr(c.exam[k]); if(t) ex.push(k==='general' ? t : `${l}: ${t}`); });
+  if(ex.length) P.push(ex.join(' '));
+  const inv = [], notable = [], normal = [];
+  c.labs.filter(labHasData).forEach(e => { if(e.panel==='ua'){ inv.push(`Urinalysis: ${tr(e.text)}.`); return; }
+    const p = labParts(e,true); if(p.length) notable.push(...(e.panel==='gas'?[`${labName(e)}: ${p.join(', ')}`]:p)); else normal.push(labName(e)); });
+  if(notable.length) inv.unshift(`Labs are notable for ${notable.join(', ')}.`);
+  if(normal.length) inv.push(`${notable.length ? 'Otherwise normal' : 'Normal'}: ${normal.join(', ')}.`);
+  c.imaging.forEach(s => { const l = studyLine(s); if(l) inv.push(l + (/[.!?]$/.test(l)?'':'.')); });
+  if(inv.length) P.push(inv.join(' '));
+  const as = [];
+  if(tr(c.ap.summary)) as.push(`In summary, ${tr(c.ap.summary).replace(/^in summary,?\s*/i,'')}${/[.!?]$/.test(tr(c.ap.summary))?'':'.'}`);
+  const dd = t => c.ap.ddx.filter(d => d.type===t && tr(d.dx));
+  const lk = dd('likely'), co = dd('consider'), cm = dd('cantmiss');
+  const why = d => tr(d.why) ? ` given ${tr(d.why).replace(/\.$/,'')}` : '';
+  if(lk.length) as.push(`I think the most likely diagnosis is ${lk.map(d => tr(d.dx) + why(d)).join('; or ')}.`);
+  if(co.length) as.push(`I'm also considering ${joinAnd(co.map(d => tr(d.dx) + why(d)))}.`);
+  if(cm.length) as.push(`I want to rule out ${joinAnd(cm.map(d => tr(d.dx) + why(d)))}.`);
+  if(as.length) P.push(as.join(' '));
+  const pl = [];
+  if(tr(c.ap.workup)) pl.push(`For workup, ${tr(c.ap.workup).replace(/\.$/,'')}.`);
+  if(tr(c.ap.tx)) pl.push(`For management, ${tr(c.ap.tx).replace(/\.$/,'')}.`);
+  if(tr(c.ap.consults)) pl.push(`I'd consult ${tr(c.ap.consults).replace(/\.$/,'')}.`);
+  if(c.ap.dispo) pl.push(`Disposition: ${c.ap.dispo}${tr(c.ap.dispoDetail)?` (${tr(c.ap.dispoDetail)})`:''}.`);
+  if(pl.length) P.push(pl.join(' '));
+  return P.join('\n\n');
+}
+
+function genNote(c){
+  const L = [], sec = t => { L.push(''); L.push(t.toUpperCase()); };
+  const d = new Date(c.created);
+  L.push('EMERGENCY DEPARTMENT NOTE — MEDICAL STUDENT');
+  L.push(`Date: ${d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}${c.arrival?`   Arrival: ${c.arrival}`:''}${c.ctas?`   CTAS: ${c.ctas}`:''}`);
+  L.push(`ID: ${cap(idLine(c))}${tr(c.label)?` (${tr(c.label)})`:''}`);
+  L.push(`CC: ${tr(c.cc) || '—'}`);
+  if(tr(c.triage)) L.push(`Triage: ${tr(c.triage)}`);
+  sec('History of presenting illness'); L.push(hpiText(c) || '—');
+  const {pos,neg} = rosSplit(c);
+  if(pos.length || neg.length || tr(c.rosOther)){ sec('Review of systems');
+    ROS.forEach(([sys,items]) => { const p = items.filter(i=>c.ros[i]==='pos'), n = items.filter(i=>c.ros[i]==='neg');
+      if(p.length||n.length) L.push(`${sys}: ${[p.length?'+ '+p.join(', '):'', n.length?'− '+n.join(', '):''].filter(Boolean).join('; ')}`); });
+    if(tr(c.rosOther)) L.push(`Other: ${tr(c.rosOther)}`); }
+  sec('Past medical history'); L.push(c.pmh.length ? c.pmh.map(p=>`- ${p}`).join('\n') : '—');
+  if(tr(c.psh)){ sec('Past surgical history'); L.push(tr(c.psh)); }
+  sec('Medications'); const meds = c.meds.map(medStr).filter(Boolean); L.push(meds.length ? meds.map(m=>`- ${m}`).join('\n') : '—');
+  sec('Allergies'); L.push(tr(c.allergies) || 'Not documented');
+  if(tr(c.social)){ sec('Social history'); L.push(tr(c.social)); }
+  if(tr(c.family)){ sec('Family history'); L.push(tr(c.family)); }
+  if(tr(c.records)){ sec('Relevant prior records'); L.push(tr(c.records)); }
+  sec('Physical exam');
+  const vs = c.vitals.filter(v=>vitStr(v));
+  if(vs.length){ L.push('Vitals:'); vs.forEach(v => L.push(`  ${v.t||'--:--'}  ${vitStr(v)}`)); }
+  EXAM.forEach(([k,l]) => { const t = tr(c.exam[k]); if(t) L.push(`${l}: ${t}`); });
+  const labs = c.labs.filter(labHasData), imgs = c.imaging.filter(s => tr(s.findings)||tr(s.impression)||tr(s.study));
+  if(labs.length || imgs.length){ sec('Investigations');
+    if(labs.length){ L.push('Labs:'); labs.forEach(e => L.push(`  ${labName(e)}${e.t?` (${e.t})`:''}: ${labParts(e,false).filter(x=>!/^\(/.test(x)).join(', ')}`)); }
+    imgs.forEach(s => { L.push(`${s.mod}${tr(s.study)?' – '+tr(s.study):''}${s.t?` (${s.t})`:''}:`);
+      if(tr(s.findings)) L.push(`  Findings: ${tr(s.findings)}`); if(tr(s.impression)) L.push(`  Impression: ${tr(s.impression)}`); if(tr(s.prior)) L.push(`  Comparison: ${tr(s.prior)}`); }); }
+  const course = c.ap.course.filter(x=>tr(x.text));
+  if(course.length){ sec('ED course'); course.forEach(x => L.push(`${x.t||'--:--'}  ${tr(x.text)}`)); }
+  sec('Assessment');
+  if(tr(c.ap.summary)) L.push(tr(c.ap.summary));
+  const ddx = ['likely','consider','cantmiss'].flatMap(t => c.ap.ddx.filter(d=>d.type===t && tr(d.dx)));
+  if(ddx.length){ L.push('Differential diagnosis:'); ddx.forEach((d,i) => L.push(`  ${i+1}. ${tr(d.dx)} [${DDX_T[d.type]}]${tr(d.why)?' — '+tr(d.why):''}`)); }
+  sec('Plan');
+  if(tr(c.ap.workup)) L.push(`Investigations: ${tr(c.ap.workup)}`);
+  if(tr(c.ap.tx)) L.push(`Management: ${tr(c.ap.tx)}`);
+  if(tr(c.ap.consults)) L.push(`Consults: ${tr(c.ap.consults)}`);
+  L.push(`Disposition: ${c.ap.dispo || '—'}${tr(c.ap.dispoDetail)?` — ${tr(c.ap.dispoDetail)}`:''}`);
+  if(tr(c.ap.followup)) L.push(`Follow-up / return precautions: ${tr(c.ap.followup)}`);
+  L.push(''); L.push('Seen and discussed with the supervising physician.');
+  return L.join('\n');
+}
+function hpiDraft(c){
+  const h = c.hpi, s = [];
+  const lead = `${cap(idLine(c))} presenting with ${tr(c.cc) || '[complaint]'}`;
+  const bits = [];
+  if(tr(h.onset)) bits.push(`onset ${tr(h.onset)}`); if(tr(h.dur)) bits.push(`for ${tr(h.dur)}`);
+  s.push(lead + (bits.length ? ', ' + bits.join(', ') : '') + '.');
+  const desc = [];
+  if(tr(h.loc)) desc.push(`located ${tr(h.loc)}`); if(tr(h.char)) desc.push(`described as ${tr(h.char)}`);
+  if(tr(h.rad)) desc.push(`radiating ${tr(h.rad)}`); if(tr(h.sev)) desc.push(`severity ${tr(h.sev)}/10`);
+  if(desc.length) s.push(cap(desc.join(', ')) + '.');
+  if(tr(h.timing)) s.push(cap(tr(h.timing)) + '.');
+  if(tr(h.agg)) s.push(`Worse with ${tr(h.agg)}.`); if(tr(h.rel)) s.push(`Relieved by / tried: ${tr(h.rel)}.`);
+  if(tr(h.assoc)) s.push(`Associated with ${tr(h.assoc)}.`);
+  if(tr(h.context)) s.push(cap(tr(h.context)) + '.'); if(tr(h.prior)) s.push(`Previously: ${tr(h.prior)}.`);
+  return s.join(' ').replace(/\.\./g,'.');
+}
+
+/* ---------- events ---------- */
+function updHdr(){ const h = hdrText(); const t=$('#hdrT'), s=$('#hdrS'); if(t) t.textContent=h.t; if(s) s.textContent=h.s; }
+function onField(e){
+  const el = e.target;
+  if(el.dataset.cap){ const p = photos.find(x=>x.id===el.dataset.cap); if(p){ p.caption = el.value; clearTimeout(onField._p); onField._p=setTimeout(()=>dbPut('photos',p),400); } return; }
+  if(!el.dataset.f || !cur) return;
+  setPath(cur, el.dataset.f, el.value);
+  if('lo' in el.dataset || 'hi' in el.dataset){ el.classList.remove('H','L'); const f = flagOf(el.value, el.dataset.lo!=null?+el.dataset.lo:null, el.dataset.hi!=null?+el.dataset.hi:null); if(f) el.classList.add(f); }
+  const m = el.dataset.f.match(/^labs\.(\d+)\./); if(m){ const d = $('#der_'+m[1]); if(d) d.innerHTML = derived(cur.labs[+m[1]]); }
+  if(/^(label|age|sex|cc|ctas)$/.test(el.dataset.f)) updHdr();
+  if(el.tagName === 'TEXTAREA') autosize(el);
+  save();
+}
+document.addEventListener('input', onField);
+document.addEventListener('change', e => { if(e.target.tagName === 'SELECT') onField(e); });
+document.addEventListener('keydown', e => { if(e.key === 'Enter' && e.target.id === 'pmhIn'){ e.preventDefault(); addPmh(); } });
+function addPmh(){ const i = $('#pmhIn'); const vals = i.value.split(',').map(s=>s.trim()).filter(Boolean); if(!vals.length) return; cur.pmh.push(...vals); save(); rerender(); setTimeout(()=>$('#pmhIn')?.focus(),0); }
+function focusLast(sel){ setTimeout(() => { const els = document.querySelectorAll(sel); const el = els[els.length-1]; if(el){ el.focus(); el.scrollIntoView({block:'center'}); } }, 0); }
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if(!b) return;
+  const d = b.dataset;
+  switch(d.act){
+    case 'new': await flush(); cur = blankCase(); cases.push(cur); photos = []; tab = 'chart'; await dbPut('cases', cur); render(); window.scrollTo(0,0); setTimeout(()=>$('#f_label')?.focus(),0); break;
+    case 'open': cur = cases.find(c => c.id === d.id); photos = await photosOf(cur.id); tab = 'chart'; render(); window.scrollTo(0,0); break;
+    case 'back': await flush(); cur = null; photos = []; render(); window.scrollTo(0,0); break;
+    case 'tab': tab = d.t; render(); window.scrollTo(0,0); break;
+    case 'rm': { const ks = d.p.split('.'); const idx = +ks.pop(); const arr = getPath(cur, ks.join('.'));
+      if(ks[0]==='imaging'){ const s = arr[idx]; const ps = photos.filter(p=>p.ref==='img:'+s.id); if(ps.length && !(await ask(`Delete this study and its ${ps.length} photo${ps.length>1?'s':''}?`))) return; for(const p of ps){ await dbDel('photos',p.id); } photos = photos.filter(p=>p.ref!=='img:'+s.id); }
+      arr.splice(idx,1); save(); rerender(); break; }
+    case 'pmh-add': addPmh(); break;
+    case 'add-med': cur.meds.push({name:'',dose:'',freq:''}); save(); rerender(); focusLast('[data-f$=".name"][data-f^="meds"]'); break;
+    case 'bulk-meds': { const t = $('#bulkMeds').value.split('\n').map(s=>s.trim()).filter(Boolean); t.forEach(n => cur.meds.push({name:n,dose:'',freq:''})); if(t.length){ save(); rerender(); toast(`Added ${t.length}`); } break; }
+    case 'add-vit': cur.vitals.push({t:nowT()}); save(); rerender(); focusLast('[data-f$=".hr"]'); break;
+    case 'add-lab': cur.labs.push({id:uid(), panel:d.p, t:nowT(), v:{}, rows: d.p==='custom'?[{}]:[], text:'', gas:'venous'}); save(); render();
+      setTimeout(()=>{ const cards=document.querySelectorAll('main .card'); const c=cards[cards.length-2]; if(c){ c.scrollIntoView({block:'start'}); c.querySelector('input:not([type=time]),textarea')?.focus({preventScroll:true}); } },0); break;
+    case 'add-row': cur.labs[+d.i].rows.push({}); save(); rerender(); break;
+    case 'add-img': cur.imaging.push({id:uid(), mod:d.m, t:nowT(), study: d.m==='ECG'?'12-lead':'', findings:'', impression:'', prior:''}); save(); render();
+      setTimeout(()=>{ const cards=document.querySelectorAll('main .card'); const c=cards[cards.length-1]; if(c) c.scrollIntoView({block:'start'}); },0); break;
+    case 'ros': { const s = d.s, nx = {'':'pos', pos:'neg', neg:''}[cur.ros[s]||'']; if(nx) cur.ros[s]=nx; else delete cur.ros[s];
+      b.className = 'ros ' + nx; b.setAttribute('aria-pressed', !!nx); b.querySelector('b').textContent = nx==='pos'?'+':nx==='neg'?'−':'·'; save(); break; }
+    case 'normal': { const n = EXAM.find(x=>x[0]===d.k)[2]; const cur0 = tr(cur.exam[d.k]); cur.exam[d.k] = cur0 ? cur0 + ' ' + n : n; const t = $('#'+idf('exam.'+d.k)); t.value = cur.exam[d.k]; autosize(t); save(); break; }
+    case 'stamp': { const t = $('#f_notes'); const add = `${t.value && !t.value.endsWith('\n') ? '\n' : ''}[${nowT()}] `; t.value += add; cur.notes = t.value; autosize(t); t.focus(); t.setSelectionRange(t.value.length,t.value.length); save(); break; }
+    case 'hpi-draft': { const t = $('#f_hpi_narrative'); const dr = hpiDraft(cur); if(tr(cur.hpi.narrative) && !(await ask('Replace the current narrative with a new draft?','Replace'))) return; cur.hpi.narrative = dr; t.value = dr; autosize(t); save(); break; }
+    case 'add-ddx': cur.ap.ddx.push({dx:'', type: cur.ap.ddx.length ? 'consider' : 'likely', why:''}); save(); rerender(); focusLast('[data-f$=".dx"]'); break;
+    case 'add-course': cur.ap.course.push({t:nowT(), text:''}); save(); rerender(); focusLast('[data-f^="ap.course"][data-f$=".text"]'); break;
+    case 'out-sub': outSub = d.s; render(); break;
+    case 'regen': if(!(await ask('Replace this text with a fresh draft? Edits you made here will be lost.','Regenerate'))) return;
+      cur.out[outSub] = outSub==='oral' ? genOral(cur) : genNote(cur); save(); render(); toast('Regenerated'); break;
+    case 'copy': copyText($('#outText').value); break;
+    case 'del-case': if(!(await ask('Delete this patient and all of its photos?'))) return;
+      for(const p of photos) await dbDel('photos', p.id); await dbDel('cases', cur.id); clearTimeout(saveTimer); saveTimer=null;
+      cases = cases.filter(c => c.id !== cur.id); cur = null; photos = []; render(); toast('Deleted'); break;
+    case 'cam': pendingRef = d.ref; $('#fileCam').value=''; $('#fileCam').click(); break;
+    case 'lib': pendingRef = d.ref; $('#fileLib').value=''; $('#fileLib').click(); break;
+    case 'ph-view': viewPhoto(d.id); break;
+    case 'ph-del': { if(!(await ask('Delete this photo?'))) return; await dbDel('photos', d.id); photos = photos.filter(p=>p.id!==d.id); closeModal(); rerender(); break; }
+    case 'modal-close': closeModal(); if(cur) rerender(); break;
+    case 'settings': settings(); break;
+    case 'reload': location.reload(); break;
+    case 'hide-install': lsSet('edcap.hideInstall','1'); render(); break;
+    case 'bk-file': await saveBackupFile(); break;
+    case 'share-out': try{ await navigator.share({text: $('#outText').value}); }catch(err){} break;
+    case 'ph-share': { const p = photos.find(x=>x.id===d.id); if(!p) return; try{ const blob = await (await fetch(p.data)).blob(); const f = new File([blob], `ed-photo-${p.id}.jpg`, {type:'image/jpeg'});
+      if(navigator.canShare && navigator.canShare({files:[f]})) await navigator.share({files:[f]}); else toast('Sharing images isn\u2019t supported here'); }catch(err){} break; }
+    case 'bk-copy': await backup(d.ph === '1'); break;
+    case 'restore': await restore(); break;
+    case 'wipe': if(!(await ask('Delete every patient and photo on this device?','Delete all'))) return;
+      for(const c of cases) await dbDel('cases', c.id); for(const p of await dbAll('photos')) await dbDel('photos', p.id);
+      cases = []; closeModal(); render(); toast('All data deleted'); break;
+  }
+});
+
+/* ---------- photos ---------- */
+function compress(file){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => { const M = 1600; const s = Math.min(1, M / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.round(img.naturalWidth*s), h = Math.round(img.naturalHeight*s);
+      const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.8)); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+    img.src = url;
+  });
+}
+async function onFiles(e){
+  const files = [...(e.target.files || [])]; if(!files.length || !cur) return;
+  let n = 0;
+  for(const f of files){ try{ const data = await compress(f); const p = {id:uid(), caseId:cur.id, ref:pendingRef || 'sec:'+tab, caption:'', t:Date.now(), data}; await dbPut('photos', p); photos.push(p); n++; }catch(err){ toast('That image could not be read. Try a JPEG or PNG.'); } }
+  if(n){ rerender(); toast(n > 1 ? `${n} photos added` : 'Photo added'); }
+}
+$('#fileCam').addEventListener('change', onFiles);
+$('#fileLib').addEventListener('change', onFiles);
+function viewPhoto(id){
+  const p = photos.find(x=>x.id===id); if(!p) return;
+  modal(`<img src="${p.data}" alt="${esc(p.caption||'Attached photo')}">
+    <label class="fld"><span>Caption</span><input data-cap="${p.id}" value="${esc(p.caption)}" placeholder="e.g. CXR — RLL opacity"></label>
+    <p class="hint">Taken ${new Date(p.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}.</p>
+    <div class="row"><button class="btn danger" data-act="ph-del" data-id="${p.id}">Delete</button><span class="grow"></span>${navigator.share ? `<button class="btn soft" data-act="ph-share" data-id="${p.id}">Share</button>` : ''}<button class="btn primary" data-act="modal-close">Done</button></div>`);
+}
+
+/* ---------- backup ---------- */
+function settings(){
+  modal(`<div class="card-h"><h2>Backup &amp; data</h2><button class="x" data-act="modal-close" aria-label="Close">×</button></div>
+    <p class="hint">${memMode ? 'Storage is unavailable here, so nothing is kept after you close the app.' : 'Everything is stored only on this device, inside the home-screen app. Nothing is sent anywhere.'} ${cases.length} patient${cases.length===1?'':'s'} saved.</p>
+    <p class="hint" id="bkstat">${bkStatText()}</p>
+    <div class="row"><button class="btn primary grow" data-act="bk-file">Save backup file</button><label class="btn soft grow filebtn" style="justify-content:center">Load backup file<input type="file" id="loadFile" accept=".json,application/json,text/plain"></label></div>
+    <p class="hint">Backup files include photos. Save them to Files (e.g. On My iPhone), not Messages or email. Loading a backup adds its patients and updates any with the same ID.</p>
+    <details><summary>Backup as text instead</summary><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+    <div class="row"><button class="btn soft grow" data-act="bk-copy" data-ph="0">Copy backup (text)</button><button class="btn soft grow" data-act="bk-copy" data-ph="1">Copy with photos</button></div>
+    <label class="fld"><span>Restore from backup</span><textarea id="restoreIn" rows="4" placeholder="Paste backup text here"></textarea></label>
+    <button class="btn soft" data-act="restore">Restore</button></div></details>
+    <button class="btn danger" data-act="wipe">Delete all patients on this device</button>`);
+}
+function bkDue(){ if(!cases.length) return false; const l = lsGet('edcap.lastBackup'); return !l || (Date.now() - +l) > 20*36e5; }
+function bkStatText(){ const l = lsGet('edcap.lastBackup'); return l ? `Last backup file: ${new Date(+l).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}` : 'No backup file saved yet.'; }
+function markBackup(){ lsSet('edcap.lastBackup', String(Date.now())); const el = $('#bkstat'); if(el) el.textContent = bkStatText(); if(!cur && !$('#modal')) render(); }
+async function saveBackupFile(){
+  if(!cases.length){ toast('Nothing to back up yet'); return; }
+  await flush();
+  const data = JSON.stringify({app:'ed-case-capture', v:1, exported:new Date().toISOString(), cases, photos: await dbAll('photos')});
+  const name = 'ed-capture-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  const blob = new Blob([data], {type:'application/json'});
+  let file = null; try{ file = new File([blob], name, {type:'application/json'}); }catch(e){}
+  if(file && navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file]}); markBackup(); toast('Backup saved'); return; }
+    catch(e){ if(e && e.name === 'AbortError') return; }
+  }
+  try{ const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000); markBackup(); toast('Backup file saved'); }
+  catch(e){ toast('Couldn\u2019t save a file here. Use backup as text.'); }
+}
+async function applyBackup(text){
+  let data; try{ data = JSON.parse(text); }catch(e){ toast('That isn\u2019t an ED Capture backup'); return; }
+  if(!data || !Array.isArray(data.cases)){ toast('That isn\u2019t an ED Capture backup'); return; }
+  const n = data.cases.length;
+  if(!(await ask(`Load ${n} patient${n===1?'':'s'}${data.exported ? ' from ' + new Date(data.exported).toLocaleDateString() : ''}? Patients already on this device stay.`, 'Load backup'))) return;
+  for(const c of data.cases) await dbPut('cases', c);
+  for(const p of (data.photos || [])) await dbPut('photos', p);
+  cases = await dbAll('cases'); closeModal(); render(); toast(`Loaded ${n} patient${n===1?'':'s'}`);
+}
+document.addEventListener('change', async e => { if(e.target.id === 'loadFile'){ const f = e.target.files && e.target.files[0]; e.target.value = ''; if(!f) return; try{ await applyBackup(await f.text()); }catch(err){ toast('Couldn\u2019t read that file'); } } });
+async function backup(withPhotos){
+  await flush();
+  const data = {app:'ed-case-capture', v:1, exported:new Date().toISOString(), cases};
+  if(withPhotos) data.photos = await dbAll('photos');
+  await copyText(JSON.stringify(data));
+}
+async function restore(){ await applyBackup($('#restoreIn').value); }
+
+/* ---------- example case (shown once, clearly marked) ---------- */
+function demoCase(){
+  const c = blankCase();
+  Object.assign(c, {label:'EXAMPLE – Bed 12', age:'58', sex:'M', arrival:'09:42', ctas:'2', cc:'chest pain × 2 h',
+    triage:'Central chest pressure since 07:30 at rest. EMS gave ASA 162 mg chewed + 1 SL nitro with partial relief.',
+    pmh:['hypertension','type 2 diabetes','dyslipidemia'], psh:'Appendectomy (1994)',
+    meds:[{name:'ramipril',dose:'10 mg',freq:'daily'},{name:'metformin',dose:'1000 mg',freq:'BID'},{name:'atorvastatin',dose:'40 mg',freq:'qHS'}],
+    allergies:'NKDA', social:'Ex-smoker, 30 pack-years, quit 2019. Alcohol 2–3 drinks/week. Lives with spouse, independent.', family:'Father MI at age 54.',
+    records:'ECG 2025: sinus rhythm, no ischemic changes. No prior cardiac workup.',
+    vitals:[{t:'09:45',hr:'98',sbp:'158',dbp:'92',rr:'18',temp:'36.8',spo2:'97',o2:'RA',gcs:'15',gluc:'9.4',pain:'6'},{t:'11:10',hr:'84',sbp:'138',dbp:'84',rr:'16',temp:'36.9',spo2:'98',o2:'RA',pain:'2'}],
+    labs:[{id:uid(),panel:'cbc',t:'10:05',v:{wbc:'9.8',hgb:'146',plt:'262'}},{id:uid(),panel:'lytes',t:'10:05',v:{na:'138',k:'4.1',cl:'103',hco3:'24'}},
+      {id:uid(),panel:'renal',t:'10:05',v:{urea:'6.2',cr:'98',glu:'12.6'}},{id:uid(),panel:'cardiac',t:'10:05',v:{trop1:'34',trop2:'61'}}],
+    imaging:[{id:uid(),mod:'ECG',t:'09:47',study:'12-lead',findings:'Sinus 96, normal axis, PR 160, QRS 92, QTc 438. 1 mm horizontal ST depression V4–V6. No ST elevation.',impression:'Lateral ST depression, new compared with 2025.',prior:'New vs 2025'},
+      {id:uid(),mod:'X-ray',t:'10:20',study:'CXR PA/lateral',findings:'Clear lungs, normal cardiomediastinal silhouette, no effusion or pneumothorax.',impression:'No acute findings.',prior:''}],
+    notes:'[09:55] pressure 7/10, started at rest watching TV\n[09:57] radiates L arm, diaphoretic at onset\n[10:00] no tearing pain, no recent travel or leg swelling',
+    hpi:{onset:'sudden, at rest, 07:30',loc:'central chest',dur:'2 hours, constant',char:'pressure, "heavy"',rad:'left arm',sev:'7',agg:'nothing specific',rel:'partial relief with SL nitro',assoc:'diaphoresis, mild nausea',context:'HTN, T2DM, dyslipidemia, ex-smoker, father MI at 54',prior:'none',narrative:'Central chest pressure that began suddenly at rest at 07:30 while watching TV, constant for 2 hours, rated 7/10 and radiating to the left arm. Diaphoretic with mild nausea at onset. EMS gave ASA 162 mg and one SL nitro with partial relief. No tearing quality, no recent travel or immobilization. No prior episodes or cardiac workup.'},
+    ros:{'chest pain':'pos','nausea':'pos','shortness of breath':'neg','syncope':'neg','palpitations':'neg','leg swelling':'neg','fever':'neg','cough':'neg','hemoptysis':'neg','abdominal pain':'neg'},
+    exam:{general:'Diaphoretic on arrival, now comfortable, speaking full sentences.',cvs:'Normal S1/S2, regular, no murmurs. Radial pulses equal bilaterally. No JVD.',resp:'Clear bilaterally, no crackles.',abdo:'Soft, non-tender.',msk:'No edema, no calf tenderness.'},
+    ap:{summary:'58M with HTN, T2DM, dyslipidemia and ex-smoking presenting with 2 h of typical anginal chest pain, new lateral ST depression and a rising hs-troponin (34 → 61 ng/L).',
+      ddx:[{dx:'NSTEMI',type:'likely',why:'typical pain, risk factors, new ST depression and rising troponin'},{dx:'Unstable angina',type:'consider',why:''},{dx:'Aortic dissection',type:'cantmiss',why:'no tearing pain, equal pulses, normal mediastinum'},{dx:'Pulmonary embolism',type:'cantmiss',why:'low pretest probability'}],
+      workup:'serial ECGs, repeat hs-troponin at 3 h, lipids, A1c',tx:'ASA given by EMS, heparin infusion, nitro PRN, continue statin',consults:'cardiology for NSTEMI and catheterization timing',
+      course:[{t:'10:40',text:'Pain 2/10 after nitro. Repeat ECG unchanged.'},{t:'11:15',text:'Discussed with cardiology – accepted.'}],dispo:'Admit',dispoDetail:'Cardiology, telemetry',followup:''}});
+  return c;
+}
+
+/* ---------- boot ---------- */
+(async function(){
+  await openDB();
+  cases = await dbAll('cases');
+  let seeded = false;
+  if(!memMode){ try{ const m = await req('meta','readonly',s=>s.get('seeded')); seeded = !!m; }catch(e){} }
+  if(!seeded && !cases.length){ const c = demoCase(); cases.push(c); await dbPut('cases', c); }
+  if(!seeded) await dbPut('meta', {k:'seeded', v:1});
+  render();
+  if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(()=>{}); }
+  if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if(hadController){ updateReady = true; if(!cur) render(); else toast('Update ready. Go back to the patient list to reload.'); } });
+  }
+})();
+</script>
+</body>
+</html>
