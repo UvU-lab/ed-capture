@@ -196,7 +196,8 @@ const ROS = [
   ['MSK / Skin',['back pain','joint pain','trauma','rash','wound']],
   ['Psych',['low mood','suicidal ideation','hallucinations']]
 ];
-const HPI = [['onset','Onset'],['loc','Location'],['dur','Duration'],['char','Character'],['rad','Radiation'],['sev','Severity (0–10)'],['timing','Timing / course'],['agg','Aggravating'],['rel','Relieving / tried'],['assoc','Associated symptoms'],['context','Context / risk factors'],['prior','Prior episodes / workup']];
+const HPI = [['onset','O · Onset'],['agg','P · Provoking / worse with'],['rel','P · Palliating / tried'],['char','Q · Quality'],['loc','R · Region'],['rad','R · Radiation'],['sev','S · Severity (0–10)'],['timing','T · Timing / course'],['dur','Duration'],['assoc','Associated symptoms'],['context','Context / risk factors'],['prior','Prior episodes / workup']];
+const APPEAR = [['','—'],['well-appearing','Well'],['unwell-appearing','Unwell'],['sick and unstable','Sick / unstable']];
 const EXAM = [
   ['general','General','Alert, well-appearing, in no acute distress.'],
   ['heent','HEENT','Atraumatic. PERRL, EOMI. Mucous membranes moist. Oropharynx clear.'],
@@ -270,14 +271,21 @@ function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; 
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 let updateReady = false;
+let tomb = {cases:{}, photos:{}};   // deletion records, so a loaded backup doesn't bring deleted items back
+async function tombstone(kind, ids){ const now = Date.now(); ids.forEach(id => { tomb[kind][id] = now; });
+  const cut = now - 90*864e5; for(const k of ['cases','photos']) for(const id in tomb[k]) if(tomb[k][id] < cut) delete tomb[k][id];
+  await dbPut('meta', {k:'deleted', cases:tomb.cases, photos:tomb.photos}); }
 let cases = [], cur = null, photos = [], tab = 'chart', outSub = 'oral', pendingRef = null, saveTimer = null;
 
 function blankCase(){
   return {id:uid(), created:Date.now(), updated:Date.now(), label:'', age:'', sex:'', arrival:nowT(), ctas:'', cc:'', triage:'',
     pmh:[], psh:'', meds:[], allergies:'', social:'', family:'', records:'', vitals:[], labs:[], imaging:[], notes:'',
     hpi:{}, ros:{}, exam:{}, ap:{summary:'', ddx:[], workup:'', tx:'', consults:'', course:[], dispo:'', dispoDetail:'', followup:''},
-    out:{oral:'', note:''}};
+    out:{oral:'', note:''}, appear:'', appearNote:'', examOmit:{}, invInterp:''};
 }
+function ensure(c){ const b = blankCase(); for(const k in b){ if(c[k] === undefined) c[k] = b[k]; }
+  for(const k in b.ap){ if(c.ap[k] === undefined) c.ap[k] = b.ap[k]; }
+  c.ap.ddx.forEach(d => { d.pos = d.pos || ''; d.neg = d.neg || ''; d.why = d.why || ''; }); return c; }
 function save(){
   if(!cur) return;
   cur.updated = Date.now();
@@ -423,6 +431,7 @@ labs(){
     <div class="adders">${Object.entries(PANELS).map(([k,P]) => `<button class="btn soft sm" data-act="add-lab" data-p="${k}">+ ${P.name}</button>`).join('')}</div>
     <p class="hint">Flags use generic adult SI ranges. Troponin, NT-proBNP, lipase and D-dimer cut-offs are assay-specific, so they aren't flagged. Check your lab's reference intervals.</p></section>
   ${cur.labs.map((e,i) => labCard(e,i)).join('')}
+  ${interpCard()}
   <section class="card">${photoStrip('sec:labs','Photos (lab screen, printouts)')}</section>`;
 },
 imaging(){
@@ -435,7 +444,8 @@ imaging(){
     ${fld('Compared with prior', inp(`imaging.${i}.prior`,'e.g. unchanged from 2025 ECG'))}
     ${photoStrip('img:'+s.id)}
   </section>`).join('')}
-  ${cur.imaging.length ? '' : '<p class="hint">No studies yet.</p>'}`;
+  ${cur.imaging.length ? '' : '<p class="hint">No studies yet.</p>'}
+  ${interpCard()}`;
 },
 history(){
   return `<section class="card"><div class="card-h"><h2>Interview notes</h2><button class="btn soft sm" data-act="stamp">Insert time</button></div>
@@ -443,11 +453,13 @@ history(){
     ${ta('notes','Scratch notes…',5)}</section>
   <section class="card"><div class="card-h"><h2>HPI</h2></div>
     <div class="g2">${HPI.map(([k,l]) => fld(l, inp(`hpi.${k}`))).join('')}</div>
+    ${fld('Why are they presenting today?', ta('hpi.why','What changed or made them come in now',2))}
     <div class="card-h"><h3>HPI narrative</h3><button class="btn soft sm" data-act="hpi-draft">Draft from fields</button></div>
-    ${ta('hpi.narrative','Used as the HPI in your presentation and note. Leave blank to use the fields above.',4)}
+    ${ta('hpi.narrative','Relevant details in your own words. Leave blank to build the HPI from the OPPQRST fields above.',4)}
+    <p class="hint">“Why today” is added after the narrative automatically, so you don't need to repeat it here.</p>
   </section>
   <section class="card"><div class="card-h"><h2>Review of systems</h2></div>
-    <p class="hint">Tap once for positive (+), twice for negative (−), three times to clear.</p>
+    <p class="hint">Tap once for positive (+), twice for negative (−), three times to clear. In A/P, attach these to each diagnosis so your presentation groups them around the differential.</p>
     ${ROS.map(([sys,items]) => `<div class="ros-sys"><h3>${sys}</h3><div class="chips">${items.map(it => { const s = cur.ros[it] || ''; return `<button class="ros ${s}" data-act="ros" data-s="${esc(it)}" aria-pressed="${!!s}"><b>${s==='pos'?'+':s==='neg'?'−':'·'}</b>${esc(it)}</button>`; }).join('')}</div></div>`).join('')}
     ${fld('Other ROS', inp('rosOther','Anything not listed'))}
     ${photoStrip('sec:history')}
@@ -457,7 +469,9 @@ exam(){
   const last = cur.vitals[cur.vitals.length-1];
   return `<section class="card"><div class="card-h"><h2>Physical exam</h2></div>
     ${last ? `<p class="hint">Vitals (${esc(last.t||'')}): ${esc(vitStr(last))}</p>` : '<p class="hint">No vitals entered yet.</p>'}
-    ${EXAM.map(([k,l,n]) => `<div class="exam-row"><div class="row"><b>${l}</b>${n?`<button class="btn soft sm" data-act="normal" data-k="${k}">Normal</button>`:''}</div>${ta(`exam.${k}`, n ? 'Findings' : 'Other findings')}</div>`).join('')}
+    <div class="g2">${fld('Well or sick?', sel('appear', APPEAR))}${fld('Why', inp('appearNote','e.g. diaphoretic, pale'))}</div>
+    <p class="hint">Turn off “In oral” for systems you examined but that don't matter for this patient. They stay in the written note.</p>
+    ${EXAM.map(([k,l,n]) => { const on = !cur.examOmit[k]; return `<div class="exam-row"><div class="row"><b>${l}</b><button class="btn sm ${on?'soft':''}" data-act="omit" data-k="${k}" aria-pressed="${on}">${on?'✓ In oral':'Not in oral'}</button>${n?`<button class="btn soft sm" data-act="normal" data-k="${k}">Normal</button>`:''}</div>${ta(`exam.${k}`, n ? 'Pertinent positives and negatives' : 'Other findings')}</div>`; }).join('')}
     ${photoStrip('sec:exam','Photos (rash, wound, injury)')}
   </section>`;
 },
@@ -465,19 +479,20 @@ ap(){
   const a = cur.ap;
   return `<section class="card"><div class="card-h"><h2>Assessment</h2></div>
     ${fld('Summary statement', ta('ap.summary','One line: age/sex, key history, presentation, key findings'))}
-    <div class="card-h"><h3>Differential</h3><button class="btn soft sm" data-act="add-ddx">+ Diagnosis</button></div>
-    ${a.ddx.map((d,i) => `<div style="display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px solid var(--line)"><div class="row"><div class="grow">${inp(`ap.ddx.${i}.dx`,'Diagnosis')}</div><div style="width:42%">${sel(`ap.ddx.${i}.type`, Object.entries(DDX_T))}</div><button class="x" data-act="rm" data-p="ap.ddx.${i}" aria-label="Remove diagnosis">×</button></div>${ta(`ap.ddx.${i}.why`,'For / against',1)}</div>`).join('') || '<p class="hint">No diagnoses yet.</p>'}
+    <div class="card-h"><h3>Prioritized differential</h3><button class="btn soft sm" data-act="add-ddx">+ Diagnosis</button></div>
+    <p class="hint">Order matters: the top two go in your ID line. Use ↑ to reorder. Tap a review-of-systems chip to add it to that diagnosis.</p>
+    ${a.ddx.map((d,i) => ddxRow(d,i)).join('') || '<p class="hint">No diagnoses yet.</p>'}
   </section>
   <section class="card"><div class="card-h"><h2>Plan</h2></div>
-    ${fld('Investigations', ta('ap.workup','Labs, imaging, ECG, repeat trop at…'))}
-    ${fld('Management', ta('ap.tx','Treatments given or planned, with doses'))}
+    ${fld('For symptoms', ta('ap.tx','Analgesia, antiemetics, fluids, treatments given or planned, with doses'))}
+    ${fld('For workup', ta('ap.workup','Labs, imaging, ECG, repeat troponin at…'))}
     ${fld('Consults', inp('ap.consults','Service and question'))}
   </section>
   <section class="card"><div class="card-h"><h2>ED course</h2><button class="btn soft sm" data-act="add-course">+ Entry</button></div>
     ${a.course.map((c,i) => `<div class="row">${timeIn(`ap.course.${i}.t`)}<div class="grow">${ta(`ap.course.${i}.text`,'Reassessment, response to treatment, new results',1)}</div><button class="x" data-act="rm" data-p="ap.course.${i}" aria-label="Remove entry">×</button></div>`).join('') || '<p class="hint">Log reassessments and treatment responses here.</p>'}
   </section>
   <section class="card"><div class="card-h"><h2>Disposition</h2></div>
-    <div class="g2">${fld('Disposition', sel('ap.dispo', DISPO))}${fld('Details', inp('ap.dispoDetail','Service, unit, condition'))}</div>
+    <div class="g2">${fld('Where is the patient going?', sel('ap.dispo', DISPO))}${fld('Details', inp('ap.dispoDetail','Service, unit, condition'))}</div>
     ${fld('Follow-up / return precautions', ta('ap.followup','Who, when, and what should bring them back'))}
     ${photoStrip('sec:ap')}
   </section>`;
@@ -496,6 +511,9 @@ output(){
 }
 };
 
+function interpCard(){ return `<section class="card"><div class="card-h"><h2>Your interpretation</h2></div>
+    ${ta('invInterp','What do the labs and imaging mean together? e.g. rising troponin with new lateral ST depression: consistent with NSTEMI. Hyperglycemia without anion gap.',3)}
+    <p class="hint">Shared by the Labs and Imaging tabs. Goes into the Investigations part of your presentation.</p></section>`; }
 function labCard(e,i){
   const P = PANELS[e.panel];
   let body = '';
@@ -518,6 +536,23 @@ function derived(e){
   return '';
 }
 
+function ddxRow(d,i){
+  const {pos,neg} = rosSplit(cur);
+  const has = (f,t) => (f||'').toLowerCase().includes(t.toLowerCase());
+  const chips = (list,field,sign) => list.filter(t => !has(d[field],t)).map(t => `<button class="ros ${sign}" data-act="ddx-ros" data-i="${i}" data-fld="${field}" data-s="${esc(t)}"><b>${sign==='pos'?'+':'−'}</b>${esc(t)}</button>`).join('');
+  const pc = chips(pos,'pos','pos'), nc = chips(neg,'neg','neg');
+  return `<div style="display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px solid var(--line)">
+    <div class="row"><span class="pill ${i<2?'mod':''}">${i+1}</span><div class="grow">${inp(`ap.ddx.${i}.dx`,'Diagnosis')}</div>
+      ${i>0?`<button class="x" data-act="ddx-up" data-i="${i}" aria-label="Move up">↑</button>`:''}<button class="x" data-act="rm" data-p="ap.ddx.${i}" aria-label="Remove diagnosis">×</button></div>
+    <div class="g2">${fld('Category', sel(`ap.ddx.${i}.type`, Object.entries(DDX_T)))}<span></span></div>
+    ${fld('History / ROS supporting it (+)', ta(`ap.ddx.${i}.pos`,'e.g. pressure-like pain, diaphoresis',1))}
+    ${pc ? `<div class="chips">${pc}</div>` : ''}
+    ${fld('History / ROS against it (−)', ta(`ap.ddx.${i}.neg`,'e.g. no tearing pain, no leg swelling',1))}
+    ${nc ? `<div class="chips">${nc}</div>` : ''}
+    ${fld('Reasoning (optional)', ta(`ap.ddx.${i}.why`,'Exam or test findings, risk scores',1))}
+  </div>`;
+}
+
 /* ---------- generators ---------- */
 function vitStr(v){ if(!v) return ''; const p=[];
   if(v.hr)p.push(`HR ${v.hr}`); if(v.sbp||v.dbp)p.push(`BP ${v.sbp||'?'}/${v.dbp||'?'}`); if(v.rr)p.push(`RR ${v.rr}`);
@@ -526,10 +561,6 @@ function vitStr(v){ if(!v) return ''; const p=[];
 const idLine = c => `${c.age ? c.age + '-year-old ' : ''}${SEXW[c.sex] || 'patient'}`;
 const medStr = m => [m.name,m.dose,m.freq].map(tr).filter(Boolean).join(' ');
 function rosSplit(c){ const pos=[],neg=[]; ROS.forEach(([,items]) => items.forEach(it => { if(c.ros[it]==='pos')pos.push(it); else if(c.ros[it]==='neg')neg.push(it); })); return {pos,neg}; }
-function hpiText(c){
-  if(tr(c.hpi.narrative)) return tr(c.hpi.narrative);
-  return HPI.filter(([k]) => tr(c.hpi[k])).map(([k,l]) => `${l.replace(/ \(.*\)/,'')}: ${tr(c.hpi[k])}${k==='sev'&&/^\d+$/.test(tr(c.hpi[k]))?'/10':''}`).join('. ');
-}
 function labParts(e, notableOnly){
   const P = PANELS[e.panel]; if(!P) return [];
   if(P.text) return tr(e.text) ? [tr(e.text)] : [];
@@ -546,52 +577,92 @@ const labHasData = e => { const P=PANELS[e.panel]; if(P.text) return !!tr(e.text
 const labName = e => e.panel==='gas' ? `${cap(e.gas||'venous')} gas` : PANELS[e.panel].name;
 const studyLine = s => { const what = [s.mod, tr(s.study)].filter(Boolean).join(' '); const res = tr(s.impression) || tr(s.findings); return res ? `${what}: ${res}` : ''; };
 
+function hpiSentence(c){
+  const h = c.hpi, s = [], bits = [];
+  if(tr(h.onset)) bits.push(`began ${tr(h.onset)}`); if(tr(h.dur)) bits.push(`present for ${tr(h.dur)}`);
+  if(bits.length) s.push(`The ${tr(c.cc).replace(/\s*[×x]\s*\d.*$/,'') || 'symptom'} ${bits.join(' and has been ')}.`);
+  if(tr(h.agg)) s.push(`It is worse with ${tr(h.agg)}.`);
+  if(tr(h.rel)) s.push(`Palliating / tried: ${tr(h.rel)}.`);
+  const q = [];
+  if(tr(h.char)) q.push(`described as ${tr(h.char)}`); if(tr(h.loc)) q.push(`located ${tr(h.loc)}`);
+  if(tr(h.rad)) q.push(`radiating to ${tr(h.rad).replace(/^to /,'')}`); if(tr(h.sev)) q.push(`${tr(h.sev)}${/^\d+$/.test(tr(h.sev))?'/10':''} in severity`);
+  if(q.length) s.push(cap(q.join(', ')) + '.');
+  if(tr(h.timing)) s.push(cap(tr(h.timing).replace(/\.$/,'')) + '.');
+  if(tr(h.assoc)) s.push(`Associated with ${tr(h.assoc).replace(/\.$/,'')}.`);
+  if(tr(h.context)) s.push(cap(tr(h.context).replace(/\.$/,'')) + '.');
+  if(tr(h.prior)) s.push(`Prior episodes / workup: ${tr(h.prior).replace(/\.$/,'')}.`);
+  return s.join(' ');
+}
+const endDot = t => /[.!?]$/.test(t) ? t : t + '.';
+
 function genOral(c){
   const P = [];
-  const pmh = c.pmh.length ? ` with a history of ${joinAnd(c.pmh)}` : '';
-  let open = `This is a ${idLine(c)}${pmh}, presenting with ${tr(c.cc) || '[presenting complaint]'}.`;
-  const h = hpiText(c); if(h) open += ' ' + h + (/[.!?]$/.test(h) ? '' : '.');
-  P.push(open);
-  const {pos,neg} = rosSplit(c); const r=[];
-  if(pos.length) r.push(`Pertinent positives include ${joinAnd(pos)}.`);
-  if(neg.length) r.push(`They deny ${joinAnd(neg)}.`);
-  if(tr(c.rosOther)) r.push(tr(c.rosOther) + '.');
-  if(r.length) P.push(r.join(' '));
+  /* ID line */
+  const ddx = c.ap.ddx.filter(d => tr(d.dx));
+  let id = `This is a ${idLine(c)}${c.pmh.length ? ` with a history of ${joinAnd(c.pmh)}` : ''}, presenting with ${tr(c.cc) || '[presenting complaint]'}`;
+  if(c.appear) id += `, who looks ${c.appear.replace(/-appearing$/,'')}${tr(c.appearNote) ? ` (${tr(c.appearNote)})` : ''}`;
+  id += '.';
+  if(ddx.length >= 2) id += ` My leading diagnosis is ${tr(ddx[0].dx)}, followed by ${tr(ddx[1].dx)}.`;
+  else if(ddx.length === 1) id += ` My leading diagnosis is ${tr(ddx[0].dx)}.`;
+  P.push('ID\n' + id);
+
+  /* HPI */
+  const H = [];
+  const narr = tr(c.hpi.narrative) || hpiSentence(c);
+  if(narr) H.push(endDot(narr));
+  if(tr(c.hpi.why)) H.push(`Why today: ${tr(c.hpi.why).replace(/^because\s+/i,'').replace(/\.$/,'')}.`);
+  let hpi = H.join(' ');
+  const rosLines = [];
+  ddx.forEach(d => { const bits = [];
+    if(tr(d.pos)) bits.push(`supporting: ${tr(d.pos).replace(/[.,;]$/,'')}`);
+    if(tr(d.neg)) bits.push(`against: ${tr(d.neg).replace(/[.,;]$/,'')}`);
+    if(bits.length) rosLines.push(`- For ${tr(d.dx)}, ${bits.join('; ')}.`); });
+  const used = ddx.map(d => (d.pos + ' ' + d.neg).toLowerCase()).join(' ');
+  const {pos, neg} = rosSplit(c);
+  const lp = pos.filter(t => !used.includes(t.toLowerCase())), ln = neg.filter(t => !used.includes(t.toLowerCase()));
+  const lead = rosLines.length ? 'Other pertinent' : 'Pertinent';
+  if(lp.length) rosLines.push(`- ${lead} positives: ${joinAnd(lp)}.`);
+  if(ln.length) rosLines.push(`- ${lead} negatives: no ${joinAnd(ln).replace(/ and ([^,]*)$/, ' or $1')}.`);
+  if(tr(c.rosOther)) rosLines.push(`- ${endDot(tr(c.rosOther))}`);
+  if(rosLines.length) hpi += (hpi ? '\n' : '') + (ddx.length && rosLines.some(l => l.startsWith('- For')) ? 'Organized around my differential:\n' : '') + rosLines.join('\n');
   const bg = [];
-  if(tr(c.psh)) bg.push(`Surgical history: ${tr(c.psh)}.`);
   const meds = c.meds.map(medStr).filter(Boolean);
   if(meds.length) bg.push(`Medications: ${meds.join('; ')}.`);
   bg.push(`Allergies: ${tr(c.allergies) || 'not documented'}.`);
-  if(tr(c.social)) bg.push(`Social history: ${tr(c.social).replace(/\.$/,'')}.`);
+  if(tr(c.social)) bg.push(`Social: ${tr(c.social).replace(/\.$/,'')}.`);
   if(tr(c.family)) bg.push(`Family history: ${tr(c.family).replace(/\.$/,'')}.`);
-  P.push(bg.join(' '));
+  P.push('HISTORY OF PRESENTING ILLNESS\n' + (hpi || '[HPI]') + '\n' + bg.join(' '));
+
+  /* Physical exam */
   const ex = [];
   const vs = c.vitals.filter(v => vitStr(v));
-  if(vs.length){ let s = `On exam, vitals at ${vs[0].t||'triage'} were ${vitStr(vs[0])}`; if(vs.length>1){ const l=vs[vs.length-1]; s += `; most recently ${vitStr(l)}${l.t?` at ${l.t}`:''}`; } ex.push(s + '.'); }
-  EXAM.forEach(([k,l]) => { const t = tr(c.exam[k]); if(t) ex.push(k==='general' ? t : `${l}: ${t}`); });
-  if(ex.length) P.push(ex.join(' '));
+  if(vs.length){ let s = `Vitals at ${vs[0].t || 'triage'}: ${vitStr(vs[0])}`;
+    if(vs.length > 1){ const l = vs[vs.length-1]; s += `. Most recent${l.t ? ` at ${l.t}` : ''}: ${vitStr(l)}`; } ex.push(s + '.'); }
+  EXAM.forEach(([k,l]) => { const t = tr(c.exam[k]); if(t && !c.examOmit[k]) ex.push(`${l}: ${endDot(t)}`); });
+  P.push('PHYSICAL EXAM\n' + (ex.join('\n') || '[exam]'));
+
+  /* Investigations */
   const inv = [], notable = [], normal = [];
-  c.labs.filter(labHasData).forEach(e => { if(e.panel==='ua'){ inv.push(`Urinalysis: ${tr(e.text)}.`); return; }
-    const p = labParts(e,true); if(p.length) notable.push(...(e.panel==='gas'?[`${labName(e)}: ${p.join(', ')}`]:p)); else normal.push(labName(e)); });
+  c.labs.filter(labHasData).forEach(e => { if(e.panel === 'ua'){ inv.push(`Urinalysis: ${endDot(tr(e.text))}`); return; }
+    const p = labParts(e, true); if(p.length) notable.push(...(e.panel === 'gas' ? [`${labName(e)}: ${p.join(', ')}`] : p)); else normal.push(labName(e)); });
   if(notable.length) inv.unshift(`Labs are notable for ${notable.join(', ')}.`);
   if(normal.length) inv.push(`${notable.length ? 'Otherwise normal' : 'Normal'}: ${normal.join(', ')}.`);
-  c.imaging.forEach(s => { const l = studyLine(s); if(l) inv.push(l + (/[.!?]$/.test(l)?'':'.')); });
-  if(inv.length) P.push(inv.join(' '));
-  const as = [];
-  if(tr(c.ap.summary)) as.push(`In summary, ${tr(c.ap.summary).replace(/^in summary,?\s*/i,'')}${/[.!?]$/.test(tr(c.ap.summary))?'':'.'}`);
-  const dd = t => c.ap.ddx.filter(d => d.type===t && tr(d.dx));
-  const lk = dd('likely'), co = dd('consider'), cm = dd('cantmiss');
-  const why = d => tr(d.why) ? ` given ${tr(d.why).replace(/\.$/,'')}` : '';
-  if(lk.length) as.push(`I think the most likely diagnosis is ${lk.map(d => tr(d.dx) + why(d)).join('; or ')}.`);
-  if(co.length) as.push(`I'm also considering ${joinAnd(co.map(d => tr(d.dx) + why(d)))}.`);
-  if(cm.length) as.push(`I want to rule out ${joinAnd(cm.map(d => tr(d.dx) + why(d)))}.`);
-  if(as.length) P.push(as.join(' '));
+  c.imaging.forEach(s => { const l = studyLine(s); if(l) inv.push(endDot(l)); });
+  if(tr(c.invInterp)) inv.push(`My interpretation: ${endDot(tr(c.invInterp))}`);
+  if(inv.length) P.push('LABS AND INVESTIGATIONS\n' + inv.join('\n'));
+
+  /* Assessment */
+  if(tr(c.ap.summary)) P.push('ASSESSMENT\n' + endDot(tr(c.ap.summary).replace(/^in summary,?\s*/i,'')));
+
+  /* Plan */
   const pl = [];
-  if(tr(c.ap.workup)) pl.push(`For workup, ${tr(c.ap.workup).replace(/\.$/,'')}.`);
-  if(tr(c.ap.tx)) pl.push(`For management, ${tr(c.ap.tx).replace(/\.$/,'')}.`);
-  if(tr(c.ap.consults)) pl.push(`I'd consult ${tr(c.ap.consults).replace(/\.$/,'')}.`);
-  if(c.ap.dispo) pl.push(`Disposition: ${c.ap.dispo}${tr(c.ap.dispoDetail)?` (${tr(c.ap.dispoDetail)})`:''}.`);
-  if(pl.length) P.push(pl.join(' '));
+  if(tr(c.ap.tx)) pl.push(`For symptoms: ${endDot(tr(c.ap.tx))}`);
+  if(tr(c.ap.workup)) pl.push(`For workup: ${endDot(tr(c.ap.workup))}`);
+  if(tr(c.ap.consults)) pl.push(`Consults: ${endDot(tr(c.ap.consults))}`);
+  if(pl.length) P.push('PLAN\n' + pl.join('\n'));
+
+  /* Disposition */
+  if(c.ap.dispo || tr(c.ap.dispoDetail)) P.push('DISPOSITION\n' + endDot(`${c.ap.dispo || ''}${c.ap.dispo && tr(c.ap.dispoDetail) ? ' — ' : ''}${tr(c.ap.dispoDetail)}`));
   return P.join('\n\n');
 }
 
@@ -603,7 +674,8 @@ function genNote(c){
   L.push(`ID: ${cap(idLine(c))}${tr(c.label)?` (${tr(c.label)})`:''}`);
   L.push(`CC: ${tr(c.cc) || '—'}`);
   if(tr(c.triage)) L.push(`Triage: ${tr(c.triage)}`);
-  sec('History of presenting illness'); L.push(hpiText(c) || '—');
+  sec('History of presenting illness'); L.push(tr(c.hpi.narrative) || hpiSentence(c) || '—');
+  if(tr(c.hpi.why)) L.push(`Presenting today because: ${tr(c.hpi.why)}`);
   const {pos,neg} = rosSplit(c);
   if(pos.length || neg.length || tr(c.rosOther)){ sec('Review of systems');
     ROS.forEach(([sys,items]) => { const p = items.filter(i=>c.ros[i]==='pos'), n = items.filter(i=>c.ros[i]==='neg');
@@ -618,50 +690,38 @@ function genNote(c){
   if(tr(c.records)){ sec('Relevant prior records'); L.push(tr(c.records)); }
   sec('Physical exam');
   const vs = c.vitals.filter(v=>vitStr(v));
+  if(c.appear) L.push(`Overall: ${c.appear}${tr(c.appearNote)?` (${tr(c.appearNote)})`:''}`);
   if(vs.length){ L.push('Vitals:'); vs.forEach(v => L.push(`  ${v.t||'--:--'}  ${vitStr(v)}`)); }
   EXAM.forEach(([k,l]) => { const t = tr(c.exam[k]); if(t) L.push(`${l}: ${t}`); });
   const labs = c.labs.filter(labHasData), imgs = c.imaging.filter(s => tr(s.findings)||tr(s.impression)||tr(s.study));
   if(labs.length || imgs.length){ sec('Investigations');
     if(labs.length){ L.push('Labs:'); labs.forEach(e => L.push(`  ${labName(e)}${e.t?` (${e.t})`:''}: ${labParts(e,false).filter(x=>!/^\(/.test(x)).join(', ')}`)); }
     imgs.forEach(s => { L.push(`${s.mod}${tr(s.study)?' – '+tr(s.study):''}${s.t?` (${s.t})`:''}:`);
-      if(tr(s.findings)) L.push(`  Findings: ${tr(s.findings)}`); if(tr(s.impression)) L.push(`  Impression: ${tr(s.impression)}`); if(tr(s.prior)) L.push(`  Comparison: ${tr(s.prior)}`); }); }
+      if(tr(s.findings)) L.push(`  Findings: ${tr(s.findings)}`); if(tr(s.impression)) L.push(`  Impression: ${tr(s.impression)}`); if(tr(s.prior)) L.push(`  Comparison: ${tr(s.prior)}`); });
+    if(tr(c.invInterp)) L.push(`Interpretation: ${tr(c.invInterp)}`); }
   const course = c.ap.course.filter(x=>tr(x.text));
   if(course.length){ sec('ED course'); course.forEach(x => L.push(`${x.t||'--:--'}  ${tr(x.text)}`)); }
   sec('Assessment');
   if(tr(c.ap.summary)) L.push(tr(c.ap.summary));
-  const ddx = ['likely','consider','cantmiss'].flatMap(t => c.ap.ddx.filter(d=>d.type===t && tr(d.dx)));
-  if(ddx.length){ L.push('Differential diagnosis:'); ddx.forEach((d,i) => L.push(`  ${i+1}. ${tr(d.dx)} [${DDX_T[d.type]}]${tr(d.why)?' — '+tr(d.why):''}`)); }
+  const ddx = c.ap.ddx.filter(d => tr(d.dx));
+  if(ddx.length){ L.push('Differential diagnosis:'); ddx.forEach((d,i) => { L.push(`  ${i+1}. ${tr(d.dx)} [${DDX_T[d.type]}]`);
+    if(tr(d.pos)) L.push(`     For: ${tr(d.pos)}`); if(tr(d.neg)) L.push(`     Against: ${tr(d.neg)}`); if(tr(d.why)) L.push(`     Reasoning: ${tr(d.why)}`); }); }
   sec('Plan');
+  if(tr(c.ap.tx)) L.push(`Symptom management / treatment: ${tr(c.ap.tx)}`);
   if(tr(c.ap.workup)) L.push(`Investigations: ${tr(c.ap.workup)}`);
-  if(tr(c.ap.tx)) L.push(`Management: ${tr(c.ap.tx)}`);
   if(tr(c.ap.consults)) L.push(`Consults: ${tr(c.ap.consults)}`);
   L.push(`Disposition: ${c.ap.dispo || '—'}${tr(c.ap.dispoDetail)?` — ${tr(c.ap.dispoDetail)}`:''}`);
   if(tr(c.ap.followup)) L.push(`Follow-up / return precautions: ${tr(c.ap.followup)}`);
   L.push(''); L.push('Seen and discussed with the supervising physician.');
   return L.join('\n');
 }
-function hpiDraft(c){
-  const h = c.hpi, s = [];
-  const lead = `${cap(idLine(c))} presenting with ${tr(c.cc) || '[complaint]'}`;
-  const bits = [];
-  if(tr(h.onset)) bits.push(`onset ${tr(h.onset)}`); if(tr(h.dur)) bits.push(`for ${tr(h.dur)}`);
-  s.push(lead + (bits.length ? ', ' + bits.join(', ') : '') + '.');
-  const desc = [];
-  if(tr(h.loc)) desc.push(`located ${tr(h.loc)}`); if(tr(h.char)) desc.push(`described as ${tr(h.char)}`);
-  if(tr(h.rad)) desc.push(`radiating ${tr(h.rad)}`); if(tr(h.sev)) desc.push(`severity ${tr(h.sev)}/10`);
-  if(desc.length) s.push(cap(desc.join(', ')) + '.');
-  if(tr(h.timing)) s.push(cap(tr(h.timing)) + '.');
-  if(tr(h.agg)) s.push(`Worse with ${tr(h.agg)}.`); if(tr(h.rel)) s.push(`Relieved by / tried: ${tr(h.rel)}.`);
-  if(tr(h.assoc)) s.push(`Associated with ${tr(h.assoc)}.`);
-  if(tr(h.context)) s.push(cap(tr(h.context)) + '.'); if(tr(h.prior)) s.push(`Previously: ${tr(h.prior)}.`);
-  return s.join(' ').replace(/\.\./g,'.');
-}
+function hpiDraft(c){ return hpiSentence(c); }
 
 /* ---------- events ---------- */
 function updHdr(){ const h = hdrText(); const t=$('#hdrT'), s=$('#hdrS'); if(t) t.textContent=h.t; if(s) s.textContent=h.s; }
 function onField(e){
   const el = e.target;
-  if(el.dataset.cap){ const p = photos.find(x=>x.id===el.dataset.cap); if(p){ p.caption = el.value; clearTimeout(onField._p); onField._p=setTimeout(()=>dbPut('photos',p),400); } return; }
+  if(el.dataset.cap){ const p = photos.find(x=>x.id===el.dataset.cap); if(p){ p.caption = el.value; p.mtime = Date.now(); clearTimeout(onField._p); onField._p=setTimeout(()=>dbPut('photos',p),400); } return; }
   if(!el.dataset.f || !cur) return;
   setPath(cur, el.dataset.f, el.value);
   if('lo' in el.dataset || 'hi' in el.dataset){ el.classList.remove('H','L'); const f = flagOf(el.value, el.dataset.lo!=null?+el.dataset.lo:null, el.dataset.hi!=null?+el.dataset.hi:null); if(f) el.classList.add(f); }
@@ -681,11 +741,11 @@ document.addEventListener('click', async e => {
   const d = b.dataset;
   switch(d.act){
     case 'new': await flush(); cur = blankCase(); cases.push(cur); photos = []; tab = 'chart'; await dbPut('cases', cur); render(); window.scrollTo(0,0); setTimeout(()=>$('#f_label')?.focus(),0); break;
-    case 'open': cur = cases.find(c => c.id === d.id); photos = await photosOf(cur.id); tab = 'chart'; render(); window.scrollTo(0,0); break;
+    case 'open': cur = ensure(cases.find(c => c.id === d.id)); photos = await photosOf(cur.id); tab = 'chart'; render(); window.scrollTo(0,0); break;
     case 'back': await flush(); cur = null; photos = []; render(); window.scrollTo(0,0); break;
     case 'tab': tab = d.t; render(); window.scrollTo(0,0); break;
     case 'rm': { const ks = d.p.split('.'); const idx = +ks.pop(); const arr = getPath(cur, ks.join('.'));
-      if(ks[0]==='imaging'){ const s = arr[idx]; const ps = photos.filter(p=>p.ref==='img:'+s.id); if(ps.length && !(await ask(`Delete this study and its ${ps.length} photo${ps.length>1?'s':''}?`))) return; for(const p of ps){ await dbDel('photos',p.id); } photos = photos.filter(p=>p.ref!=='img:'+s.id); }
+      if(ks[0]==='imaging'){ const s = arr[idx]; const ps = photos.filter(p=>p.ref==='img:'+s.id); if(ps.length && !(await ask(`Delete this study and its ${ps.length} photo${ps.length>1?'s':''}?`))) return; for(const p of ps){ await dbDel('photos',p.id); } if(ps.length) await tombstone('photos', ps.map(p=>p.id)); photos = photos.filter(p=>p.ref!=='img:'+s.id); }
       arr.splice(idx,1); save(); rerender(); break; }
     case 'pmh-add': addPmh(); break;
     case 'add-med': cur.meds.push({name:'',dose:'',freq:''}); save(); rerender(); focusLast('[data-f$=".name"][data-f^="meds"]'); break;
@@ -701,7 +761,10 @@ document.addEventListener('click', async e => {
     case 'normal': { const n = EXAM.find(x=>x[0]===d.k)[2]; const cur0 = tr(cur.exam[d.k]); cur.exam[d.k] = cur0 ? cur0 + ' ' + n : n; const t = $('#'+idf('exam.'+d.k)); t.value = cur.exam[d.k]; autosize(t); save(); break; }
     case 'stamp': { const t = $('#f_notes'); const add = `${t.value && !t.value.endsWith('\n') ? '\n' : ''}[${nowT()}] `; t.value += add; cur.notes = t.value; autosize(t); t.focus(); t.setSelectionRange(t.value.length,t.value.length); save(); break; }
     case 'hpi-draft': { const t = $('#f_hpi_narrative'); const dr = hpiDraft(cur); if(tr(cur.hpi.narrative) && !(await ask('Replace the current narrative with a new draft?','Replace'))) return; cur.hpi.narrative = dr; t.value = dr; autosize(t); save(); break; }
-    case 'add-ddx': cur.ap.ddx.push({dx:'', type: cur.ap.ddx.length ? 'consider' : 'likely', why:''}); save(); rerender(); focusLast('[data-f$=".dx"]'); break;
+    case 'add-ddx': cur.ap.ddx.push({dx:'', type: cur.ap.ddx.length ? 'consider' : 'likely', pos:'', neg:'', why:''}); save(); rerender(); focusLast('[data-f$=".dx"]'); break;
+    case 'ddx-up': { const i = +d.i, a = cur.ap.ddx; [a[i-1], a[i]] = [a[i], a[i-1]]; save(); rerender(); break; }
+    case 'ddx-ros': { const x = cur.ap.ddx[+d.i]; const v = tr(x[d.fld]); x[d.fld] = v ? v.replace(/[,;.]?$/, ', ') + d.s : d.s; save(); rerender(); break; }
+    case 'omit': { if(cur.examOmit[d.k]) delete cur.examOmit[d.k]; else cur.examOmit[d.k] = true; save(); rerender(); break; }
     case 'add-course': cur.ap.course.push({t:nowT(), text:''}); save(); rerender(); focusLast('[data-f^="ap.course"][data-f$=".text"]'); break;
     case 'out-sub': outSub = d.s; render(); break;
     case 'regen': if(!(await ask('Replace this text with a fresh draft? Edits you made here will be lost.','Regenerate'))) return;
@@ -709,11 +772,12 @@ document.addEventListener('click', async e => {
     case 'copy': copyText($('#outText').value); break;
     case 'del-case': if(!(await ask('Delete this patient and all of its photos?'))) return;
       for(const p of photos) await dbDel('photos', p.id); await dbDel('cases', cur.id); clearTimeout(saveTimer); saveTimer=null;
+      await tombstone('cases', [cur.id]); await tombstone('photos', photos.map(p=>p.id));
       cases = cases.filter(c => c.id !== cur.id); cur = null; photos = []; render(); toast('Deleted'); break;
     case 'cam': pendingRef = d.ref; $('#fileCam').value=''; $('#fileCam').click(); break;
     case 'lib': pendingRef = d.ref; $('#fileLib').value=''; $('#fileLib').click(); break;
     case 'ph-view': viewPhoto(d.id); break;
-    case 'ph-del': { if(!(await ask('Delete this photo?'))) return; await dbDel('photos', d.id); photos = photos.filter(p=>p.id!==d.id); closeModal(); rerender(); break; }
+    case 'ph-del': { if(!(await ask('Delete this photo?'))) return; await dbDel('photos', d.id); await tombstone('photos', [d.id]); photos = photos.filter(p=>p.id!==d.id); closeModal(); rerender(); break; }
     case 'modal-close': closeModal(); if(cur) rerender(); break;
     case 'settings': settings(); break;
     case 'reload': location.reload(); break;
@@ -725,7 +789,8 @@ document.addEventListener('click', async e => {
     case 'bk-copy': await backup(d.ph === '1'); break;
     case 'restore': await restore(); break;
     case 'wipe': if(!(await ask('Delete every patient and photo on this device?','Delete all'))) return;
-      for(const c of cases) await dbDel('cases', c.id); for(const p of await dbAll('photos')) await dbDel('photos', p.id);
+      const allP = await dbAll('photos'); await tombstone('cases', cases.map(c=>c.id)); await tombstone('photos', allP.map(p=>p.id));
+      for(const c of cases) await dbDel('cases', c.id); for(const p of allP) await dbDel('photos', p.id);
       cases = []; closeModal(); render(); toast('All data deleted'); break;
   }
 });
@@ -745,7 +810,7 @@ function compress(file){
 async function onFiles(e){
   const files = [...(e.target.files || [])]; if(!files.length || !cur) return;
   let n = 0;
-  for(const f of files){ try{ const data = await compress(f); const p = {id:uid(), caseId:cur.id, ref:pendingRef || 'sec:'+tab, caption:'', t:Date.now(), data}; await dbPut('photos', p); photos.push(p); n++; }catch(err){ toast('That image could not be read. Try a JPEG or PNG.'); } }
+  for(const f of files){ try{ const data = await compress(f); const p = {id:uid(), caseId:cur.id, ref:pendingRef || 'sec:'+tab, caption:'', t:Date.now(), mtime:Date.now(), data}; await dbPut('photos', p); photos.push(p); n++; }catch(err){ toast('That image could not be read. Try a JPEG or PNG.'); } }
   if(n){ rerender(); toast(n > 1 ? `${n} photos added` : 'Photo added'); }
 }
 $('#fileCam').addEventListener('change', onFiles);
@@ -764,7 +829,7 @@ function settings(){
     <p class="hint">${memMode ? 'Storage is unavailable here, so nothing is kept after you close the app.' : 'Everything is stored only on this device, inside the home-screen app. Nothing is sent anywhere.'} ${cases.length} patient${cases.length===1?'':'s'} saved.</p>
     <p class="hint" id="bkstat">${bkStatText()}</p>
     <div class="row"><button class="btn primary grow" data-act="bk-file">Save backup file</button><label class="btn soft grow filebtn" style="justify-content:center">Load backup file<input type="file" id="loadFile" accept=".json,application/json,text/plain"></label></div>
-    <p class="hint">Backup files include photos. Save them to Files (e.g. On My iPhone), not Messages or email. Loading a backup adds its patients and updates any with the same ID.</p>
+    <p class="hint">Backup files include photos and are named with the date and time. To move between devices, save to iCloud Drive and load the newest file on the other device. Loading merges: each patient keeps whichever copy was edited last, and patients you deleted stay deleted.</p>
     <details><summary>Backup as text instead</summary><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
     <div class="row"><button class="btn soft grow" data-act="bk-copy" data-ph="0">Copy backup (text)</button><button class="btn soft grow" data-act="bk-copy" data-ph="1">Copy with photos</button></div>
     <label class="fld"><span>Restore from backup</span><textarea id="restoreIn" rows="4" placeholder="Paste backup text here"></textarea></label>
@@ -777,8 +842,9 @@ function markBackup(){ lsSet('edcap.lastBackup', String(Date.now())); const el =
 async function saveBackupFile(){
   if(!cases.length){ toast('Nothing to back up yet'); return; }
   await flush();
-  const data = JSON.stringify({app:'ed-case-capture', v:1, exported:new Date().toISOString(), cases, photos: await dbAll('photos')});
-  const name = 'ed-capture-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  const data = JSON.stringify({app:'ed-case-capture', v:2, exported:new Date().toISOString(), cases, photos: await dbAll('photos'), deleted: tomb});
+  const n = new Date(), pad = x => String(x).padStart(2,'0');
+  const name = `ed-capture-backup-${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}-${pad(n.getHours())}${pad(n.getMinutes())}.json`;
   const blob = new Blob([data], {type:'application/json'});
   let file = null; try{ file = new File([blob], name, {type:'application/json'}); }catch(e){}
   if(file && navigator.canShare && navigator.canShare({files:[file]})){
@@ -792,16 +858,36 @@ async function saveBackupFile(){
 async function applyBackup(text){
   let data; try{ data = JSON.parse(text); }catch(e){ toast('That isn\u2019t an ED Capture backup'); return; }
   if(!data || !Array.isArray(data.cases)){ toast('That isn\u2019t an ED Capture backup'); return; }
-  const n = data.cases.length;
-  if(!(await ask(`Load ${n} patient${n===1?'':'s'}${data.exported ? ' from ' + new Date(data.exported).toLocaleDateString() : ''}? Patients already on this device stay.`, 'Load backup'))) return;
-  for(const c of data.cases) await dbPut('cases', c);
-  for(const p of (data.photos || [])) await dbPut('photos', p);
-  cases = await dbAll('cases'); closeModal(); render(); toast(`Loaded ${n} patient${n===1?'':'s'}`);
+  await flush();
+  const del = {cases:{...tomb.cases}, photos:{...tomb.photos}};
+  for(const k of ['cases','photos']) for(const [id,t] of Object.entries((data.deleted||{})[k]||{})) del[k][id] = Math.max(del[k][id]||0, t);
+  const local = new Map(cases.map(c => [c.id, c]));
+  const plan = {add:[], update:[], keep:0, remove:[]};
+  for(const c of data.cases){ if((del.cases[c.id]||0) >= (c.updated||0)) continue;
+    const l = local.get(c.id); if(!l) plan.add.push(c); else if((c.updated||0) > (l.updated||0)) plan.update.push(c); else plan.keep++; }
+  for(const c of cases){ if((del.cases[c.id]||0) > (c.updated||0)) plan.remove.push(c); }
+  const localP = new Map((await dbAll('photos')).map(p => [p.id, p]));
+  const photoPut = (data.photos||[]).filter(p => !((del.photos[p.id]||0) >= (p.mtime||p.t||0)) && (!localP.has(p.id) || (p.mtime||p.t||0) > (localP.get(p.id).mtime||localP.get(p.id).t||0)));
+  const photoDel = [...localP.values()].filter(p => (del.photos[p.id]||0) > (p.mtime||p.t||0) || plan.remove.some(c => c.id === p.caseId));
+  const parts = [];
+  if(plan.add.length) parts.push(`${plan.add.length} new`); if(plan.update.length) parts.push(`${plan.update.length} updated (backup is newer)`);
+  if(plan.keep) parts.push(`${plan.keep} unchanged or newer here`); if(plan.remove.length) parts.push(`${plan.remove.length} removed (deleted on the other device)`);
+  if(photoPut.length) parts.push(`${photoPut.length} photo${photoPut.length>1?'s':''} added`);
+  if(!plan.add.length && !plan.update.length && !plan.remove.length && !photoPut.length && !photoDel.length){ toast('Already up to date'); return; }
+  if(!(await ask(`Merge this backup${data.exported ? ' from ' + new Date(data.exported).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}? ${parts.join(', ')}.`, 'Merge'))) return;
+  for(const c of [...plan.add, ...plan.update]) await dbPut('cases', ensure(c));
+  for(const c of plan.remove) await dbDel('cases', c.id);
+  for(const p of photoPut) await dbPut('photos', p);
+  for(const p of photoDel) await dbDel('photos', p.id);
+  tomb = del; await dbPut('meta', {k:'deleted', cases:tomb.cases, photos:tomb.photos});
+  cases = (await dbAll('cases')).map(ensure);
+  if(cur){ const c = cases.find(x => x.id === cur.id); if(c){ cur = c; photos = await photosOf(cur.id); } else { cur = null; photos = []; } }
+  closeModal(); render(); toast('Backup merged');
 }
 document.addEventListener('change', async e => { if(e.target.id === 'loadFile'){ const f = e.target.files && e.target.files[0]; e.target.value = ''; if(!f) return; try{ await applyBackup(await f.text()); }catch(err){ toast('Couldn\u2019t read that file'); } } });
 async function backup(withPhotos){
   await flush();
-  const data = {app:'ed-case-capture', v:1, exported:new Date().toISOString(), cases};
+  const data = {app:'ed-case-capture', v:2, exported:new Date().toISOString(), cases, deleted: tomb};
   if(withPhotos) data.photos = await dbAll('photos');
   await copyText(JSON.stringify(data));
 }
@@ -822,12 +908,13 @@ function demoCase(){
     imaging:[{id:uid(),mod:'ECG',t:'09:47',study:'12-lead',findings:'Sinus 96, normal axis, PR 160, QRS 92, QTc 438. 1 mm horizontal ST depression V4–V6. No ST elevation.',impression:'Lateral ST depression, new compared with 2025.',prior:'New vs 2025'},
       {id:uid(),mod:'X-ray',t:'10:20',study:'CXR PA/lateral',findings:'Clear lungs, normal cardiomediastinal silhouette, no effusion or pneumothorax.',impression:'No acute findings.',prior:''}],
     notes:'[09:55] pressure 7/10, started at rest watching TV\n[09:57] radiates L arm, diaphoretic at onset\n[10:00] no tearing pain, no recent travel or leg swelling',
-    hpi:{onset:'sudden, at rest, 07:30',loc:'central chest',dur:'2 hours, constant',char:'pressure, "heavy"',rad:'left arm',sev:'7',agg:'nothing specific',rel:'partial relief with SL nitro',assoc:'diaphoresis, mild nausea',context:'HTN, T2DM, dyslipidemia, ex-smoker, father MI at 54',prior:'none',narrative:'Central chest pressure that began suddenly at rest at 07:30 while watching TV, constant for 2 hours, rated 7/10 and radiating to the left arm. Diaphoretic with mild nausea at onset. EMS gave ASA 162 mg and one SL nitro with partial relief. No tearing quality, no recent travel or immobilization. No prior episodes or cardiac workup.'},
+    hpi:{onset:'sudden, at rest, 07:30',loc:'central chest',dur:'2 hours, constant',char:'pressure, "heavy"',rad:'left arm',sev:'7',agg:'nothing specific',rel:'partial relief with SL nitro',assoc:'diaphoresis, mild nausea',context:'HTN, T2DM, dyslipidemia, ex-smoker, father MI at 54',prior:'none',why:'pain not settling after 2 hours and he was frightened by the sweating',narrative:'Central chest pressure that began suddenly at rest at 07:30 while watching TV, constant for 2 hours, rated 7/10 and radiating to the left arm. Diaphoretic with mild nausea at onset. EMS gave ASA 162 mg and one SL nitro with partial relief. No tearing quality, no recent travel or immobilization. No prior episodes or cardiac workup.'},
     ros:{'chest pain':'pos','nausea':'pos','shortness of breath':'neg','syncope':'neg','palpitations':'neg','leg swelling':'neg','fever':'neg','cough':'neg','hemoptysis':'neg','abdominal pain':'neg'},
+    appear:'unwell-appearing', appearNote:'diaphoretic on arrival', invInterp:'Rising hs-troponin (34 → 61 ng/L) with new lateral ST depression is consistent with NSTEMI. Hyperglycemia without an anion gap. CXR does not suggest an alternative cause.',
     exam:{general:'Diaphoretic on arrival, now comfortable, speaking full sentences.',cvs:'Normal S1/S2, regular, no murmurs. Radial pulses equal bilaterally. No JVD.',resp:'Clear bilaterally, no crackles.',abdo:'Soft, non-tender.',msk:'No edema, no calf tenderness.'},
     ap:{summary:'58M with HTN, T2DM, dyslipidemia and ex-smoking presenting with 2 h of typical anginal chest pain, new lateral ST depression and a rising hs-troponin (34 → 61 ng/L).',
-      ddx:[{dx:'NSTEMI',type:'likely',why:'typical pain, risk factors, new ST depression and rising troponin'},{dx:'Unstable angina',type:'consider',why:''},{dx:'Aortic dissection',type:'cantmiss',why:'no tearing pain, equal pulses, normal mediastinum'},{dx:'Pulmonary embolism',type:'cantmiss',why:'low pretest probability'}],
-      workup:'serial ECGs, repeat hs-troponin at 3 h, lipids, A1c',tx:'ASA given by EMS, heparin infusion, nitro PRN, continue statin',consults:'cardiology for NSTEMI and catheterization timing',
+      ddx:[{dx:'NSTEMI',type:'likely',pos:'pressure-like pain at rest radiating to left arm, diaphoresis, nausea, multiple risk factors',neg:'',why:'new ST depression and rising troponin'},{dx:'Unstable angina',type:'consider',pos:'same anginal features',neg:'',why:'less likely given troponin rise'},{dx:'Aortic dissection',type:'cantmiss',pos:'hypertension',neg:'no tearing or back pain, no syncope',why:'equal pulses, normal mediastinum'},{dx:'Pulmonary embolism',type:'cantmiss',pos:'',neg:'no shortness of breath, hemoptysis, leg swelling or recent travel',why:'low pretest probability'}],
+      workup:'serial ECGs, repeat hs-troponin at 3 h, lipids, A1c',tx:'nitro SL PRN for pain; ASA given by EMS, start heparin infusion, continue statin',consults:'cardiology for NSTEMI and catheterization timing',
       course:[{t:'10:40',text:'Pain 2/10 after nitro. Repeat ECG unchanged.'},{t:'11:15',text:'Discussed with cardiology – accepted.'}],dispo:'Admit',dispoDetail:'Cardiology, telemetry',followup:''}});
   return c;
 }
@@ -835,7 +922,8 @@ function demoCase(){
 /* ---------- boot ---------- */
 (async function(){
   await openDB();
-  cases = await dbAll('cases');
+  cases = (await dbAll('cases')).map(ensure);
+  if(!memMode){ try{ const t = await req('meta','readonly',s=>s.get('deleted')); if(t) tomb = {cases:t.cases||{}, photos:t.photos||{}}; }catch(e){} }
   let seeded = false;
   if(!memMode){ try{ const m = await req('meta','readonly',s=>s.get('seeded')); seeded = !!m; }catch(e){} }
   if(!seeded && !cases.length){ const c = demoCase(); cases.push(c); await dbPut('cases', c); }

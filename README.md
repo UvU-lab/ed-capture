@@ -28,14 +28,21 @@ Same steps as Pre-Rounds. You can do this from a computer or from Safari on your
 It works offline once it has been opened. The camera and photo library work from the
 **Camera** / **Library** buttons in each section.
 
-## 3. Back up at the end of each shift
+## 3. Back up, and move between devices with iCloud Drive
 
-- **Backup & data → Save backup file** → choose **Save to Files**
-  (e.g. On My iPhone → ED Capture). Backup files include photos, so they can be a few MB.
-  Don't send them through Messages or email.
-- To restore, or to move to a new phone: **Load backup file** and pick the latest backup.
-  Loading adds the backup's patients; patients already in the app stay.
-- The patient list shows an amber reminder when your last backup file is more than ~20 hours old.
+- At the end of each shift: **Save backup file** → **Save to Files** → **iCloud Drive** →
+  a folder such as `ED Capture backups`. Files are named with the date and time, so the newest
+  one is easy to find.
+- On another device (iPhone, iPad, Mac, or a PC with iCloud), open the app, tap
+  **Load backup file** and pick the newest file from that folder.
+- Loading **merges**. Each patient keeps whichever copy was edited last, new patients are added,
+  and patients you deleted on one device stay deleted after you load a later backup.
+  Edit on one device at a time and save a backup before switching. If you edit the same
+  patient on two devices before syncing, the copy edited last wins.
+- The app can't open iCloud files by itself, so you always pick the file in the Files picker.
+- The app shows an amber reminder when your last backup file is more than ~20 hours old.
+- Turn on **Advanced Data Protection** (Settings → your name → iCloud) to end-to-end encrypt
+  iCloud Drive, and delete old backup files you no longer need.
 
 ## Sharing output
 

@@ -1,6 +1,6 @@
 // ED Case Capture service worker — makes the app open offline.
 // Patient data is NOT handled here; it lives only in the app's local storage on the device.
-const VERSION = 'edcapture-v1';
+const VERSION = 'edcapture-v2';
 const FONTS = 'edcapture-fonts';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
