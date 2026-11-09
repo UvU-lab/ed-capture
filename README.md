@@ -62,3 +62,7 @@ Keep a passcode on your phone. Use a bed number or initials, keep identifiers ou
 delete patients once the note is done, and delete old backup files you no longer need.
 Check your program's and site's rules on clinical photos and patient information on
 personal devices (PHIA in Manitoba).
+
+## Also hosted here
+
+- [Focused Exam Finder](exam-finder/) — presenting complaint → focused physical exam (Talley & O'Connor page refs).

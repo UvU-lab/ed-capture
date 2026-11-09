@@ -1,6 +1,6 @@
 // ED Case Capture service worker — makes the app open offline.
 // Patient data is NOT handled here; it lives only in the app's local storage on the device.
-const VERSION = 'edcapture-v2';
+const VERSION = 'edcapture-v3';
 const FONTS = 'edcapture-fonts';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -31,6 +31,8 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  // Leave other apps hosted in sub-folders (e.g. /exam-finder/) to their own service workers
+  if (url.pathname.includes('/exam-finder/')) return;
 
   // The page itself: try the network first so updates arrive, fall back to the cached copy offline
   if (req.mode === 'navigate') {
