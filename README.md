@@ -11,7 +11,8 @@ Same steps as Pre-Rounds. You can do this from a computer or from Safari on your
    (only the code is public; no patient data is ever stored there), tick
    **Add a README file**, then **Create repository**.
 2. In the repository: **Add file → Upload files**. Upload these files from this folder:
-   `index.html`, `manifest.webmanifest`, `sw.js`, `icon-180.png`, `icon-192.png`, `icon-512.png`.
+   `index.html`, `manifest.webmanifest`, `sw.js`, `icon-180.png`, `icon-192.png`, `icon-512.png`
+   (and the `exam-finder` folder, which ED Capture also reads its exam checklists from).
    Tap **Commit changes**.
 3. **Settings → Pages**. Under "Build and deployment", Source = **Deploy from a branch**,
    Branch = **main**, folder **/ (root)** → **Save**.
@@ -43,6 +44,29 @@ It works offline once it has been opened. The camera and photo library work from
 - The app shows an amber reminder when your last backup file is more than ~20 hours old.
 - Turn on **Advanced Data Protection** (Settings → your name → iCloud) to end-to-end encrypt
   iCloud Drive, and delete old backup files you no longer need.
+
+## Dump & synthesize (the fast way)
+
+Each patient opens on the **Dump** tab.
+
+1. Enter the bed/initials and presenting complaint.
+2. Type, dictate (the mic on your keyboard, or **Dictate** if it shows) or paste notes in any
+   order, and tap **Add note** after each one. Results, history and exam findings can be mixed.
+3. **Focused exam** matches the complaint to Exam Finder (Talley & O'Connor) and groups the exam
+   head to toe. Add or remove presentations if the match is off.
+4. **Synthesize note** sends the notes (plus anything you entered in the other tabs and the exam
+   checklist) to Claude and puts the structured note under **Output → Synthesized**: ID/CC, HPI,
+   PMHx, Soc Hx, Fam Hx, ROS, Labs & investigations, Impression (top 3 ddx), Physical exam
+   (✓ done / ☐ to do) and Still to clarify. It needs your own Anthropic API key
+   (**API key & model**, from console.anthropic.com, billed per use). The key stays on the device
+   and isn't in backups.
+5. With no key, **Copy prompt** copies the same instructions and notes for pasting into the Claude
+   app or your "ED notes" Project (see `PROJECT-INSTRUCTIONS.md`).
+
+Before anything leaves the phone, the app checks for likely identifiers (long numbers, PHIN/MRN,
+dates with a year, DOB, phone numbers, emails, postal codes, "Mr./Mrs. Name") and offers to remove
+them. It's a safety net, not a guarantee: keep notes to age and sex. Check every synthesized value
+against the chart before you use it.
 
 ## Sharing output
 

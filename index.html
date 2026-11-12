@@ -160,6 +160,13 @@ input.L{border-color:var(--lo);background:var(--lo-soft);color:var(--lo);font-we
 .sheet img{max-width:100%;border-radius:8px;display:block}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:700;font-size:.9rem;z-index:60;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
+.dump-e{display:flex;flex-direction:column;gap:4px;padding-top:10px;border-top:1px solid var(--line)}
+.dump-e .row .pill{font-family:var(--mono)}
+.ex-reg{display:flex;flex-direction:column;gap:2px}
+.ex-reg b{font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.ex-reg span{font-size:.9rem}
+.btn.rec{background:var(--hi);border-color:var(--hi);color:#fff}
+.btn[disabled]{opacity:.55;cursor:default}
 details summary{cursor:pointer;color:var(--accent);font-weight:700;font-size:.9rem}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
@@ -170,6 +177,7 @@ details summary{cursor:pointer;color:var(--accent);font-weight:700;font-size:.9r
 <input type="file" id="fileLib" accept="image/*" multiple hidden>
 <div id="toast" class="toast" role="status"></div>
 
+<script src="exam-finder/exam-data.js"></script>
 <script>
 /* ---------- reference data ---------- */
 const PANELS = {
@@ -214,7 +222,8 @@ const EXAM = [
 const MODS = ['ECG','X-ray','CT','US','POCUS','MRI','Other'];
 const DDX_T = {likely:'Most likely', consider:'Also considering', cantmiss:"Can't miss"};
 const DISPO = ['','Discharge home','Admit','Observation','Consult pending','Transfer','Left without being seen / AMA'];
-const TABS = [['chart','Chart'],['vitals','Vitals'],['labs','Labs'],['imaging','Imaging'],['history','History'],['exam','Exam'],['ap','A/P'],['output','Output']];
+const TABS = [['dump','Dump'],['chart','Chart'],['vitals','Vitals'],['labs','Labs'],['imaging','Imaging'],['history','History'],['exam','Exam'],['ap','A/P'],['output','Output']];
+const OUTS = [['synth','Synthesized'],['oral','Oral'],['note','ED note']];
 const SEXW = {M:'man', F:'woman', X:'patient'};
 
 /* ---------- helpers ---------- */
@@ -275,16 +284,18 @@ let tomb = {cases:{}, photos:{}};   // deletion records, so a loaded backup does
 async function tombstone(kind, ids){ const now = Date.now(); ids.forEach(id => { tomb[kind][id] = now; });
   const cut = now - 90*864e5; for(const k of ['cases','photos']) for(const id in tomb[k]) if(tomb[k][id] < cut) delete tomb[k][id];
   await dbPut('meta', {k:'deleted', cases:tomb.cases, photos:tomb.photos}); }
-let cases = [], cur = null, photos = [], tab = 'chart', outSub = 'oral', pendingRef = null, saveTimer = null;
+let cases = [], cur = null, photos = [], tab = 'dump', outSub = 'synth', pendingRef = null, saveTimer = null;
 
 function blankCase(){
   return {id:uid(), created:Date.now(), updated:Date.now(), label:'', age:'', sex:'', arrival:nowT(), ctas:'', cc:'', triage:'',
     pmh:[], psh:'', meds:[], allergies:'', social:'', family:'', records:'', vitals:[], labs:[], imaging:[], notes:'',
     hpi:{}, ros:{}, exam:{}, ap:{summary:'', ddx:[], workup:'', tx:'', consults:'', course:[], dispo:'', dispoDetail:'', followup:''},
-    out:{oral:'', note:''}, appear:'', appearNote:'', examOmit:{}, invInterp:''};
+    out:{oral:'', note:'', synth:''}, appear:'', appearNote:'', examOmit:{}, invInterp:'',
+    dump:[], dumpDraft:'', examPres:null, synthAt:0};
 }
 function ensure(c){ const b = blankCase(); for(const k in b){ if(c[k] === undefined) c[k] = b[k]; }
   for(const k in b.ap){ if(c.ap[k] === undefined) c.ap[k] = b.ap[k]; }
+  if(c.out.synth === undefined) c.out.synth = '';
   c.ap.ddx.forEach(d => { d.pos = d.pos || ''; d.neg = d.neg || ''; d.why = d.why || ''; }); return c; }
 function save(){
   if(!cur) return;
@@ -347,6 +358,7 @@ function render(){
   app.innerHTML = cur ? caseView() : listView();
   document.querySelectorAll('textarea').forEach(autosize);
   const h = document.querySelector('.top'); if(h) document.documentElement.style.setProperty('--hdr', h.offsetHeight + 'px');
+  const at = document.querySelector('.tabs [aria-current="true"]'); if(at) at.scrollIntoView({block:'nearest', inline:'center'});
   return y;
 }
 function rerender(){ const y = window.scrollY; render(); window.scrollTo(0, y); }
@@ -389,6 +401,22 @@ function caseView(){
 }
 
 const VIEWS = {
+dump(){
+  const SRok = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  return `<section class="card"><div class="g2">${fld('Bed / initials', inp('label','e.g. Bed 14'))}${fld('Presenting complaint', inp('cc','e.g. chest pain × 2 h'))}</div></section>
+  <section class="card"><div class="card-h"><h2>Capture</h2></div>
+    <p class="hint">Type, dictate (tap the mic on your keyboard) or paste results, in any order. Each note gets a time stamp. Age and sex only, no names or numbers that identify the patient.</p>
+    <textarea id="dumpIn" data-f="dumpDraft" rows="4" placeholder="e.g. 58M, chest pressure since 0730 at rest, radiates L arm, sweaty. Hx HTN DM2. Trop 34 then 61…">${esc(cur.dumpDraft)}</textarea>
+    <div class="row"><button class="btn primary grow" data-act="dump-add">Add note</button>${SRok ? `<button class="btn soft" data-act="dump-dict" id="dictBtn">${rec ? '■ Stop' : 'Dictate'}</button>` : ''}</div>
+    ${cur.dump.length ? cur.dump.map((d,i) => `<div class="dump-e"><div class="row"><span class="pill">${esc(d.t)}</span><span class="grow"></span><button class="x" data-act="rm" data-p="dump.${i}" aria-label="Delete note">×</button></div>${ta(`dump.${i}.text`,'',2)}</div>`).join('') : '<p class="hint">No notes yet. Anything you already entered in the other tabs is included too.</p>'}
+  </section>
+  <section class="card" id="exCard">${examCard()}</section>
+  <section class="card"><div class="card-h"><h2>Synthesize</h2></div>
+    <div class="row"><button class="btn primary grow" data-act="synth" id="synthBtn">Synthesize note</button><button class="btn soft" data-act="synth-copy">Copy prompt</button></div>
+    <p class="hint" id="synthStat">${cur.synthAt ? `Last synthesized ${new Date(cur.synthAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}. The note is under Output → Synthesized.` : 'Synthesize sends these notes to Claude through your API key and puts the note under Output. Copy prompt copies everything so you can paste it into the Claude app instead, with no key needed.'}</p>
+    <p class="hint"><button class="btn sm" data-act="ai-settings">API key &amp; model</button></p>
+  </section>`;
+},
 chart(){
   return `<section class="card"><div class="card-h"><h2>Patient</h2></div>
     <div class="g2">${fld('Bed / initials', inp('label','e.g. Bed 14'))}${fld('Arrival', timeIn('arrival'))}</div>
@@ -498,12 +526,17 @@ ap(){
   </section>`;
 },
 output(){
-  if(!cur.out[outSub]) cur.out[outSub] = outSub === 'oral' ? genOral(cur) : genNote(cur);
+  const synth = outSub === 'synth';
+  if(!synth && !cur.out[outSub]) cur.out[outSub] = outSub === 'oral' ? genOral(cur) : genNote(cur);
   const n = photos.length;
+  const seg = `<div class="seg" role="tablist">${OUTS.map(([k,l]) => `<button data-act="out-sub" data-s="${k}" aria-current="${outSub===k}">${l}</button>`).join('')}</div>`;
+  if(synth && !tr(cur.out.synth)) return `<section class="card">${seg}
+    <p class="hint">No synthesized note yet. Add notes in the Dump tab, then tap Synthesize note.</p>
+    <button class="btn primary" data-act="tab" data-t="dump">Go to Dump</button></section>`;
   return `<section class="card">
-    <div class="seg" role="tablist"><button data-act="out-sub" data-s="oral" aria-current="${outSub==='oral'}">Oral presentation</button><button data-act="out-sub" data-s="note" aria-current="${outSub==='note'}">ED note</button></div>
+    ${seg}
     <div class="row"><button class="btn primary grow" data-act="copy">Copy text</button>${navigator.share ? '<button class="btn soft" data-act="share-out">Share</button>' : ''}<button class="btn soft" data-act="regen">Regenerate</button></div>
-    <p class="hint">Your edits here are saved. Regenerate replaces this text with a fresh draft from the other tabs.${n ? ` ${n} photo${n>1?'s are':' is'} kept in the app, not in this text.` : ''}</p>
+    <p class="hint">Your edits here are saved. ${synth ? 'Regenerate sends the Dump notes to Claude again and replaces this text. Check every value against the chart before you use it.' : 'Regenerate replaces this text with a fresh draft from the other tabs.'}${n ? ` ${n} photo${n>1?'s are':' is'} kept in the app, not in this text.` : ''}</p>
     <textarea class="out" data-f="out.${outSub}" id="outText" aria-label="Generated text">${esc(cur.out[outSub])}</textarea>
   </section>
   <section class="card"><div class="card-h"><h2>This patient</h2></div>
@@ -717,6 +750,179 @@ function genNote(c){
 }
 function hpiDraft(c){ return hpiSentence(c); }
 
+/* ---------- dump & synthesis ---------- */
+const SYNTH_PROMPT = "You turn a medical student's unstructured emergency department notes into one clean, structured note. The notes are typed fragments, voice-dictation transcripts and pasted results. They may be out of order, repetitive, heavily abbreviated or contain dictation errors.\n\nRules\n1. Use only what is in the notes. Never invent history, exam findings, results, values, doses or times. If a section has nothing, write \"Not documented.\"\n2. Copy numbers exactly: lab values, units, vitals, doses, times. If a value or unit is ambiguous or looks like a dictation error (e.g. \"potassium 41\"), keep it as written and add \"[check]\".\n3. Correct obvious dictation errors in medical terms only when the meaning is clear (e.g. \"die a free sis\" \u2192 diaphoresis). Otherwise keep the word and add \"[?]\".\n4. When notes conflict, the later one wins, unless it is a trend (e.g. repeat troponin): then keep each value with its time.\n5. Keep every pertinent negative (\"no X\", \"denies X\").\n6. Concise clinical style with standard abbreviations. Sentences in the HPI, short lists elsewhere. Keep units as given (SI).\n7. If any names, health numbers, MRNs, dates of birth or addresses appear, leave them out and use age and sex.\n\nUse these headings, in this order, as plain text (no tables):\n\nID / CHIEF COMPLAINT\nOne line: age, sex, relevant past history, chief complaint with duration. Example: \"58M with HTN and T2DM presenting with 2 h of central chest pressure.\"\n\nHPI\nNarrative: onset, provoking/palliating factors, quality, region/radiation, severity, timing/course, associated symptoms, relevant context and risk factors, treatment already given, and why the patient is presenting today.\n\nPMHx\nMedical and surgical history as bullets.\nMedications: with doses as given.\nAllergies: as given, or \"Not documented.\"\n\nSOC HX\nSmoking, alcohol, substances, living situation, baseline function, occupation, as documented.\n\nFAM HX\n\nROS\nBy system. Only systems that were asked about. List positives (+) and negatives (\u2212), including those mentioned in the HPI.\n\nLABS AND INVESTIGATIONS\nLabs grouped by panel (CBC, electrolytes, renal, liver, cardiac, coags, gas, urinalysis, other), with value and unit. Mark H/L only when clearly outside usual adult SI reference ranges; don't flag assay-specific tests (troponin, D-dimer, BNP, lipase). Show trends with times. Then ECG, imaging and POCUS with findings and impression. End with \"Interpretation (draft):\" in one or two lines.\n\nIMPRESSION\nSummary statement in 1\u20132 sentences.\nDifferential diagnosis, top 3, most likely first:\n1. Diagnosis \u2014 for: findings from the notes; against: findings from the notes\n2. \u2026\n3. \u2026\nCan't miss: any dangerous diagnosis not in the top 3 that the notes don't yet exclude, and what would rule it out.\nBase this only on documented findings. It is a draft for the student to discuss with the preceptor.\n\nPHYSICAL EXAM\nOrganise anatomically, head to toe, in this region order: Vitals & general \u2192 HEENT \u2192 Neck & lymph nodes \u2192 Cardiovascular \u2192 Respiratory \u2192 Breast \u2192 Abdomen \u2192 GU / rectal / pelvic \u2192 Extremities & peripheral vascular \u2192 Musculoskeletal \u2192 Neurological \u2192 Skin \u2192 Mental status \u2192 Bedside tests. Include only regions relevant to this presentation, plus any region with a documented finding.\nFor each item write either\n  \u2713 Item: finding as documented\n  \u2610 Item \u2014 to do\nusing \u2610 when the focused exam calls for it but nothing is documented.\nIf a \"FOCUSED EXAM CHECKLIST\" is included with the notes, use exactly those items and regions (they come from Talley & O'Connor's Clinical Examination) and place any other documented findings under the right region. If no checklist is included, build the focused exam for the chief complaint from standard clinical examination teaching and add \"(general guidance \u2014 check against Talley & O'Connor)\" after the heading.\n\nSTILL TO CLARIFY\nUp to 5 bullets: the history questions, exam steps or results that would most change the differential. Omit this section if there is nothing.\n\nOutput only the note.";
+const EXD = window.EXAM_DATA || {T:{}, C:[]};
+const REGIONS = [
+  ['Vitals & general','vitals posturalbp bpboth pulsusp crt abcde distress inspect_resp killip fever_exam sepsis_screen hydration tox haem_exam pallor thyroidstatus older_exam dm_review'],
+  ['HEENT','headinj face_resp eye_exam acuity fundoscopy hearing nose throat mouth angio'],
+  ['Neck & lymph nodes','trachea thyroid pemberton nodes'],
+  ['Cardiovascular','hands_cvs jvp hjr carotid apex ausc_cvs rub backcvs tamponade ie_stigmata radiofem htn_exam'],
+  ['Respiratory','hands_resp chest_exam fet peakflow corpulm'],
+  ['Breast','breast'],
+  ['Abdomen','gi_periph flap abdo_inspect abdo_palp liver spleen kidneys ascites bowelsounds aorta periton carnett appendix murphy renalangle bladder ckd_exam'],
+  ['GU / rectal / pelvic','groin hernia scrotum maleGU pr analpain pelvic pelvicfloor'],
+  ['Extremities & peripheral vascular','oedema pulses_leg legs_pvd sixPs buerger abi dvt varicose dm_feet monofil'],
+  ['Musculoskeletal','bonetender lfm gals hands_rheum carpal elbow shoulder neck back schober slr hip thomas trendelenburg knee lachman mcmurray ankle simmonds tmj'],
+  ['Neurological','gcs higher meningism cn pupils fields eyemove facial hit dix ul_neuro drift ll_neuro cerebellar romberg getupgo parkinson seizure_exam'],
+  ['Skin','skin lump cellulitis'],
+  ['Mental status','mse risk depression2q delirium minicog'],
+  ['Bedside tests','urinalysis vomitus']
+];
+const REGION_OF = {}; REGIONS.forEach(([r,ids]) => ids.split(' ').forEach(id => { REGION_OF[id] = r; }));
+const normT = s => ' ' + String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim() + ' ';
+const STOPT = new Set(['acute','pain','review','symptoms','older person','in an older person','suspected','mono or polyarthritis','complications']);
+function matchPres(text){
+  const q = normT(text); if(q.trim() === '') return [];
+  return EXD.C.map(c => { let sc = 0;
+    [...c.n.split(/[\/(),&]| or /), ...c.a].map(t => normT(t).trim()).filter(t => t.length >= 3 && !STOPT.has(t))
+      .forEach(t => { if(q.includes(' ' + t + ' ')) sc += t.split(' ').length + 1; });
+    return [c, sc]; }).filter(x => x[1] > 0).sort((a,b) => b[1] - a[1]).map(x => x[0]);
+}
+const dumpText = c => [...c.dump.map(d => d.text), c.dumpDraft].join(' ');
+function examPres(c){
+  if(Array.isArray(c.examPres)) return {ids:c.examPres, auto:false};
+  const m = matchPres(c.cc)[0] || (!tr(c.cc) && matchPres(dumpText(c))[0]);
+  return {ids: m ? [m.id] : [], auto:true};
+}
+function examOutline(ids){
+  const seen = new Set(), by = {};
+  ids.forEach(id => { const c = EXD.C.find(x => x.id === id); if(!c) return;
+    c.s.forEach(([,items]) => items.forEach(t => { if(seen.has(t) || !EXD.T[t]) return; seen.add(t); const r = REGION_OF[t] || 'Other'; (by[r] = by[r] || []).push(t); })); });
+  return [...REGIONS.map(r => r[0]), 'Other'].filter(r => by[r]).map(r => [r, by[r]]);
+}
+function examCard(){
+  if(!EXD.C.length) return `<div class="card-h"><h2>Focused exam</h2></div><p class="hint">Exam Finder data didn't load (open the app once with a connection). Claude will outline a general exam instead.</p>`;
+  const {ids, auto} = examPres(cur);
+  const names = ids.map(id => EXD.C.find(x => x.id === id)).filter(Boolean);
+  const sugg = matchPres(tr(cur.cc) + ' ' + dumpText(cur)).filter(c => !ids.includes(c.id)).slice(0,3);
+  const out = examOutline(ids);
+  return `<div class="card-h"><h2>Focused exam</h2>${ids.length ? `<a class="btn soft sm" href="exam-finder/#c-${ids[0]}">Open in Exam Finder</a>` : ''}</div>
+    <p class="hint">From Exam Finder (Talley &amp; O'Connor), grouped head to toe. ${auto && ids.length ? 'Matched from the presenting complaint.' : ''}</p>
+    <div class="chips">${names.map(c => `<span class="chip">${esc(c.n)}<button class="x" data-act="ex-rm" data-id="${c.id}" aria-label="Remove ${esc(c.n)}">×</button></span>`).join('') || '<span class="hint">No presentation matched yet. Enter the presenting complaint or pick one.</span>'}</div>
+    ${sugg.length ? `<div class="chips">${sugg.map(c => `<button class="ros" data-act="ex-add" data-id="${c.id}"><b>+</b>${esc(c.n)}</button>`).join('')}</div>` : ''}
+    <select id="exAdd" aria-label="Add a presentation"><option value="">Add another presentation…</option>${[...EXD.C].sort((a,b) => a.n.localeCompare(b.n)).filter(c => !ids.includes(c.id)).map(c => `<option value="${c.id}">${esc(c.n)}</option>`).join('')}</select>
+    ${out.length ? out.map(([r,ts]) => `<div class="ex-reg"><b>${esc(r)}</b><span>${ts.map(t => esc(EXD.T[t].n)).join(' · ')}</span></div>`).join('') : ''}`;
+}
+function refreshExam(){ const el = $('#exCard'); if(el) el.innerHTML = examCard(); }
+function setExam(ids){ cur.examPres = ids; save(); refreshExam(); }
+function examChecklist(c){
+  const {ids} = examPres(c); const out = examOutline(ids); if(!out.length) return '';
+  const names = ids.map(id => EXD.C.find(x => x.id === id)).filter(Boolean).map(x => `${x.n} (Talley ${x.refs || ''})`.replace(' ()',''));
+  return `FOCUSED EXAM CHECKLIST — Talley & O'Connor's Clinical Examination, 8th edn — for: ${names.join('; ')}\n` +
+    out.map(([r,ts]) => `${r}: ${ts.map(t => EXD.T[t].n).join('; ')}`).join('\n');
+}
+function hasStructured(c){
+  return !!(c.age || c.sex || c.pmh.length || c.meds.some(m => tr(m.name)) || tr(c.allergies) || tr(c.social) || tr(c.family) || tr(c.triage) || tr(c.records) || tr(c.psh) ||
+    c.vitals.some(v => vitStr(v)) || c.labs.some(labHasData) || c.imaging.some(s => tr(s.findings) || tr(s.impression)) ||
+    Object.values(c.hpi).some(v => tr(v)) || Object.keys(c.ros).length || Object.values(c.exam).some(v => tr(v)) || c.ap.ddx.some(d => tr(d.dx)) || tr(c.ap.summary));
+}
+function structuredCtx(c){
+  const copy = JSON.parse(JSON.stringify(c)); copy.label = '';
+  return genNote(copy).split('\n').filter(l => !/^(Date:|EMERGENCY DEPARTMENT NOTE|Seen and discussed)/.test(l) && !/^\S.*:\s*—$/.test(l) && l.trim() !== '—').join('\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+function buildPrompt(c){
+  const P = [];
+  if(tr(c.cc)) P.push(`Presenting complaint (as entered): ${tr(c.cc)}`);
+  const notes = c.dump.filter(d => tr(d.text)).map(d => `[${d.t}] ${tr(d.text)}`);
+  if(tr(c.dumpDraft)) notes.push(`[${nowT()}] ${tr(c.dumpDraft)}`);
+  if(tr(c.notes)) notes.push(`Interview scratch notes:\n${tr(c.notes)}`);
+  const structured = hasStructured(c);
+  if(!notes.length && !structured) return '';
+  if(notes.length) P.push('NOTES (in the order captured)\n' + notes.join('\n'));
+  if(structured) P.push('ALREADY ENTERED IN STRUCTURED FIELDS\n' + structuredCtx(c));
+  const ex = examChecklist(c); if(ex) P.push(ex);
+  return P.join('\n\n');
+}
+/* identifiers check: flags likely identifiers before anything leaves the device */
+const PHI = [
+  ['health / chart number', /\b\d{6,}\b/g],
+  ['ID keyword', /\b(?:PHIN|MRN|health card|health number|chart number|OHIP)\b[^\n]{0,20}/gi],
+  ['date with year', /\b\d{1,2}[\/.\-]\d{1,2}[\/.\-](?:19|20)\d{2}\b|\b(?:19|20)\d{2}[\/.\-]\d{1,2}[\/.\-]\d{1,2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+(?:19|20)\d{2}\b/gi],
+  ['date of birth', /\b(?:DOB|D\.O\.B\.?|date of birth|born on)\b[^\n]{0,25}/gi],
+  ['phone number', /(?:\(\d{3}\)\s?|\b\d{3}[\s.\-])\d{3}[\s.\-]\d{4}\b/g],
+  ['email', /\b[\w.+-]+@[\w-]+\.[\w.]+\b/g],
+  ['postal code', /\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d\b/gi],
+  ['name', /\b(?:Mr|Mrs|Ms|Miss|Mx)\.?\s+[A-Z][a-z'\-]+|\b(?:name is|named|patient name:?)\s+[A-Z][a-z'\-]+(?:\s+[A-Z][a-z'\-]+)?/g]
+];
+function phiScan(text){ const hits = []; PHI.forEach(([label, re]) => { (text.match(re) || []).forEach(m => hits.push([label, m.trim()])); }); return hits; }
+function phiRedact(text){ let t = text; PHI.forEach(([, re]) => { t = t.replace(re, '[removed]'); }); return t; }
+function phiGate(text){
+  const hits = phiScan(text); if(!hits.length) return Promise.resolve(text);
+  return new Promise(res => {
+    const m = modal(`<h2>Possible identifiers</h2><p class="hint">These look like they could identify the patient:</p>
+      <div class="chips">${hits.slice(0,12).map(([l,v]) => `<span class="pill flag">${esc(l)}: ${esc(v)}</span>`).join('')}${hits.length>12?`<span class="pill">+${hits.length-12} more</span>`:''}</div>
+      <div class="row"><button class="btn grow" id="phiNo">Cancel</button><button class="btn primary grow" id="phiRed">Remove them</button></div>
+      <button class="btn sm" id="phiAny" style="align-self:flex-start">Not identifiers, continue</button>`);
+    m.querySelector('#phiNo').onclick = () => { closeModal(); res(null); };
+    m.querySelector('#phiRed').onclick = () => { closeModal();
+      if(cur){ cur.dump.forEach(d => { d.text = phiRedact(d.text); }); cur.dumpDraft = phiRedact(cur.dumpDraft); cur.notes = phiRedact(cur.notes); save(); if(tab === 'dump') rerender(); }
+      res(phiRedact(text)); };
+    m.querySelector('#phiAny').onclick = () => { closeModal(); res(text); };
+  });
+}
+const aiKey = () => lsGet('edcap.apiKey') || '';
+const aiModel = () => lsGet('edcap.model') || 'claude-sonnet-5-5';
+function aiSettings(){
+  modal(`<div class="card-h"><h2>Synthesis with Claude</h2><button class="x" data-act="modal-close" aria-label="Close">×</button></div>
+    <p class="hint">Synthesize sends that patient's Dump notes, the fields you filled in and the exam checklist to Anthropic's API with your own key. It never sends photos. Create a key at console.anthropic.com (billed per use, a few cents per note). You can skip the key entirely: use <b>Copy prompt</b> and paste into the Claude app.</p>
+    <label class="fld"><span>API key</span><input id="aiKey" type="password" autocomplete="off" value="${esc(aiKey())}" placeholder="sk-ant-…"></label>
+    <label class="fld"><span>Model</span><input id="aiModel" class="num" value="${esc(aiModel())}"></label>
+    <p class="hint">The key is stored only in this app on this device. Backup files don't include it.</p>
+    <div class="row"><button class="btn danger" data-act="ai-forget">Remove key</button><span class="grow"></span><button class="btn primary" data-act="ai-save">Save</button></div>`);
+}
+let synthBusy = false;
+async function synthesize(){
+  if(synthBusy) return;
+  if(!aiKey()){ aiSettings(); toast('Add your API key, or use Copy prompt'); return; }
+  let content = buildPrompt(cur); if(!content){ toast('Add some notes first'); return; }
+  if(!navigator.onLine){ toast('You’re offline. Use Copy prompt later.'); return; }
+  if(tr(cur.out.synth) && !(await ask('Replace the current synthesized note?','Replace'))) return;
+  content = await phiGate(content); if(content == null) return;
+  const c = cur; synthBusy = true;
+  const btn = $('#synthBtn'), st = $('#synthStat');
+  if(btn){ btn.disabled = true; btn.textContent = 'Synthesizing…'; } if(st) st.textContent = 'Working… this usually takes 10–30 seconds.';
+  try{
+    const r = await fetch('https://api.anthropic.com/v1/messages', {method:'POST',
+      headers:{'content-type':'application/json','x-api-key':aiKey(),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({model:aiModel(), max_tokens:4096, system:SYNTH_PROMPT, messages:[{role:'user', content}]})});
+    let j = null; try{ j = await r.json(); }catch(e){}
+    if(!r.ok) throw new Error((j && j.error && j.error.message) || `HTTP ${r.status}`);
+    const text = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    if(!text) throw new Error('Empty response');
+    c.out.synth = text; c.synthAt = Date.now(); c.updated = Date.now(); await dbPut('cases', c);
+    if(cur === c){ tab = 'output'; outSub = 'synth'; render(); window.scrollTo(0,0); toast('Note ready'); } else toast('Synthesized note saved');
+  }catch(e){
+    const msg = /401|invalid x-api-key|authentication/i.test(e.message) ? 'The API key was rejected. Check it under API key & model.' : `Couldn’t synthesize: ${e.message}`;
+    const st2 = $('#synthStat'); if(st2) st2.textContent = msg; toast('Synthesis failed');
+  }finally{
+    synthBusy = false; const b2 = $('#synthBtn'); if(b2){ b2.disabled = false; b2.textContent = 'Synthesize note'; }
+  }
+}
+async function copyPrompt(){
+  let content = buildPrompt(cur); if(!content){ toast('Add some notes first'); return; }
+  content = await phiGate(content); if(content == null) return;
+  await copyText(SYNTH_PROMPT + '\n\n=====\n\n' + content);
+}
+let rec = null;
+function toggleDictate(){
+  if(rec){ rec.stop(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if(!SR) return;
+  const t = $('#dumpIn'); if(!t) return;
+  const base = t.value && !/\s$/.test(t.value) ? t.value + ' ' : t.value;
+  try{ rec = new SR(); }catch(e){ toast('Dictation isn’t available here. Use the mic on your keyboard.'); return; }
+  rec.lang = 'en-CA'; rec.continuous = true; rec.interimResults = true;
+  rec.onresult = e => { let s = ''; for(let i = 0; i < e.results.length; i++) s += e.results[i][0].transcript; const el = $('#dumpIn'); if(el){ el.value = base + s; autosize(el); } cur.dumpDraft = base + s; save(); };
+  rec.onerror = e => { toast(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'Microphone blocked here. Use the mic on your keyboard.' : 'Dictation stopped'); };
+  rec.onend = () => { rec = null; const b = $('#dictBtn'); if(b){ b.textContent = 'Dictate'; b.classList.remove('rec'); } };
+  try{ rec.start(); const b = $('#dictBtn'); if(b){ b.textContent = '■ Stop'; b.classList.add('rec'); } }catch(e){ rec = null; toast('Couldn’t start dictation. Use the mic on your keyboard.'); }
+}
+function addDump(){
+  if(rec) rec.stop();
+  const t = tr(cur.dumpDraft); if(!t){ $('#dumpIn')?.focus(); return; }
+  cur.dump.push({t:nowT(), text:t}); cur.dumpDraft = ''; save(); rerender(); setTimeout(() => $('#dumpIn')?.focus({preventScroll:true}), 0);
+}
+
 /* ---------- events ---------- */
 function updHdr(){ const h = hdrText(); const t=$('#hdrT'), s=$('#hdrS'); if(t) t.textContent=h.t; if(s) s.textContent=h.s; }
 function onField(e){
@@ -727,11 +933,12 @@ function onField(e){
   if('lo' in el.dataset || 'hi' in el.dataset){ el.classList.remove('H','L'); const f = flagOf(el.value, el.dataset.lo!=null?+el.dataset.lo:null, el.dataset.hi!=null?+el.dataset.hi:null); if(f) el.classList.add(f); }
   const m = el.dataset.f.match(/^labs\.(\d+)\./); if(m){ const d = $('#der_'+m[1]); if(d) d.innerHTML = derived(cur.labs[+m[1]]); }
   if(/^(label|age|sex|cc|ctas)$/.test(el.dataset.f)) updHdr();
+  if((el.dataset.f === 'cc' || el.dataset.f === 'dumpDraft') && tab === 'dump' && !Array.isArray(cur.examPres)){ clearTimeout(onField._x); onField._x = setTimeout(refreshExam, 500); }
   if(el.tagName === 'TEXTAREA') autosize(el);
   save();
 }
 document.addEventListener('input', onField);
-document.addEventListener('change', e => { if(e.target.tagName === 'SELECT') onField(e); });
+document.addEventListener('change', e => { if(e.target.id === 'exAdd'){ if(e.target.value) setExam([...examPres(cur).ids, e.target.value]); return; } if(e.target.tagName === 'SELECT') onField(e); });
 document.addEventListener('keydown', e => { if(e.key === 'Enter' && e.target.id === 'pmhIn'){ e.preventDefault(); addPmh(); } });
 function addPmh(){ const i = $('#pmhIn'); const vals = i.value.split(',').map(s=>s.trim()).filter(Boolean); if(!vals.length) return; cur.pmh.push(...vals); save(); rerender(); setTimeout(()=>$('#pmhIn')?.focus(),0); }
 function focusLast(sel){ setTimeout(() => { const els = document.querySelectorAll(sel); const el = els[els.length-1]; if(el){ el.focus(); el.scrollIntoView({block:'center'}); } }, 0); }
@@ -740,10 +947,19 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if(!b) return;
   const d = b.dataset;
   switch(d.act){
-    case 'new': await flush(); cur = blankCase(); cases.push(cur); photos = []; tab = 'chart'; await dbPut('cases', cur); render(); window.scrollTo(0,0); setTimeout(()=>$('#f_label')?.focus(),0); break;
-    case 'open': cur = ensure(cases.find(c => c.id === d.id)); photos = await photosOf(cur.id); tab = 'chart'; render(); window.scrollTo(0,0); break;
-    case 'back': await flush(); cur = null; photos = []; render(); window.scrollTo(0,0); break;
-    case 'tab': tab = d.t; render(); window.scrollTo(0,0); break;
+    case 'new': await flush(); cur = blankCase(); cases.push(cur); photos = []; tab = 'dump'; await dbPut('cases', cur); render(); window.scrollTo(0,0); setTimeout(()=>$('#f_label')?.focus(),0); break;
+    case 'open': cur = ensure(cases.find(c => c.id === d.id)); photos = await photosOf(cur.id); tab = (cur.dump.length || !hasStructured(cur)) ? 'dump' : 'chart'; render(); window.scrollTo(0,0); break;
+    case 'dump-add': addDump(); break;
+    case 'dump-dict': toggleDictate(); break;
+    case 'ex-add': setExam([...examPres(cur).ids, d.id]); break;
+    case 'ex-rm': setExam(examPres(cur).ids.filter(x => x !== d.id)); break;
+    case 'synth': await flush(); synthesize(); break;
+    case 'synth-copy': await flush(); copyPrompt(); break;
+    case 'ai-settings': aiSettings(); break;
+    case 'ai-save': { const k = $('#aiKey').value.trim(), m = $('#aiModel').value.trim(); lsSet('edcap.apiKey', k); lsSet('edcap.model', m || 'claude-sonnet-5-5'); closeModal(); toast(k ? 'Saved' : 'Saved (no key)'); break; }
+    case 'ai-forget': try{ localStorage.removeItem('edcap.apiKey'); }catch(e){} closeModal(); toast('Key removed'); break;
+    case 'back': if(rec) rec.stop(); await flush(); cur = null; photos = []; render(); window.scrollTo(0,0); break;
+    case 'tab': if(rec) rec.stop(); tab = d.t; render(); window.scrollTo(0,0); break;
     case 'rm': { const ks = d.p.split('.'); const idx = +ks.pop(); const arr = getPath(cur, ks.join('.'));
       if(ks[0]==='imaging'){ const s = arr[idx]; const ps = photos.filter(p=>p.ref==='img:'+s.id); if(ps.length && !(await ask(`Delete this study and its ${ps.length} photo${ps.length>1?'s':''}?`))) return; for(const p of ps){ await dbDel('photos',p.id); } if(ps.length) await tombstone('photos', ps.map(p=>p.id)); photos = photos.filter(p=>p.ref!=='img:'+s.id); }
       arr.splice(idx,1); save(); rerender(); break; }
@@ -767,7 +983,8 @@ document.addEventListener('click', async e => {
     case 'omit': { if(cur.examOmit[d.k]) delete cur.examOmit[d.k]; else cur.examOmit[d.k] = true; save(); rerender(); break; }
     case 'add-course': cur.ap.course.push({t:nowT(), text:''}); save(); rerender(); focusLast('[data-f^="ap.course"][data-f$=".text"]'); break;
     case 'out-sub': outSub = d.s; render(); break;
-    case 'regen': if(!(await ask('Replace this text with a fresh draft? Edits you made here will be lost.','Regenerate'))) return;
+    case 'regen': if(outSub === 'synth'){ await flush(); synthesize(); break; }
+      if(!(await ask('Replace this text with a fresh draft? Edits you made here will be lost.','Regenerate'))) return;
       cur.out[outSub] = outSub==='oral' ? genOral(cur) : genNote(cur); save(); render(); toast('Regenerated'); break;
     case 'copy': copyText($('#outText').value); break;
     case 'del-case': if(!(await ask('Delete this patient and all of its photos?'))) return;
@@ -826,7 +1043,7 @@ function viewPhoto(id){
 /* ---------- backup ---------- */
 function settings(){
   modal(`<div class="card-h"><h2>Backup &amp; data</h2><button class="x" data-act="modal-close" aria-label="Close">×</button></div>
-    <p class="hint">${memMode ? 'Storage is unavailable here, so nothing is kept after you close the app.' : 'Everything is stored only on this device, inside the home-screen app. Nothing is sent anywhere.'} ${cases.length} patient${cases.length===1?'':'s'} saved.</p>
+    <p class="hint">${memMode ? 'Storage is unavailable here, so nothing is kept after you close the app.' : 'Everything is stored only on this device, inside the home-screen app. Nothing is sent anywhere unless you tap Synthesize note.'} ${cases.length} patient${cases.length===1?'':'s'} saved.</p>
     <p class="hint" id="bkstat">${bkStatText()}</p>
     <div class="row"><button class="btn primary grow" data-act="bk-file">Save backup file</button><label class="btn soft grow filebtn" style="justify-content:center">Load backup file<input type="file" id="loadFile" accept=".json,application/json,text/plain"></label></div>
     <p class="hint">Backup files include photos and are named with the date and time. To move between devices, save to iCloud Drive and load the newest file on the other device. Loading merges: each patient keeps whichever copy was edited last, and patients you deleted stay deleted.</p>
@@ -834,6 +1051,7 @@ function settings(){
     <div class="row"><button class="btn soft grow" data-act="bk-copy" data-ph="0">Copy backup (text)</button><button class="btn soft grow" data-act="bk-copy" data-ph="1">Copy with photos</button></div>
     <label class="fld"><span>Restore from backup</span><textarea id="restoreIn" rows="4" placeholder="Paste backup text here"></textarea></label>
     <button class="btn soft" data-act="restore">Restore</button></div></details>
+    <button class="btn soft" data-act="ai-settings">Synthesis: API key &amp; model</button>
     <button class="btn danger" data-act="wipe">Delete all patients on this device</button>`);
 }
 function bkDue(){ if(!cases.length) return false; const l = lsGet('edcap.lastBackup'); return !l || (Date.now() - +l) > 20*36e5; }
